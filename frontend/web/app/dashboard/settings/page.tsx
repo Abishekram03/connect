@@ -15,20 +15,29 @@ import {
   Sun,
   Moon,
   Monitor,
+  User,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
+import { useAuth } from "@/hooks/use-auth";
 
-type Tab = "general" | "branding" | "widget" | "notifications" | "billing" | "appearance";
+type Tab = "account" | "general" | "branding" | "widget" | "notifications" | "billing" | "appearance";
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const [tab, setTab] = useState<Tab>("general");
   const [saved, setSaved] = useState(false);
 
+  const [accountName, setAccountName] = useState(user?.name || "");
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [accountMsg, setAccountMsg] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState("");
+
   const [workspace, setWorkspace] = useState({
-    name: "Syft Technologies",
-    slug: "syft-connect",
-    timezone: "UTC",
+    name: user?.organization?.name || "",
+    slug: user?.organization?.slug || "",
+    timezone: user?.organization?.timezone || "UTC",
   });
 
   const [branding, setBranding] = useState({
@@ -55,27 +64,13 @@ export default function SettingsPage() {
     mentionAlert: true,
   });
 
-  const plan = {
-    name: "Pro",
-    price: "$29",
-    interval: "month",
-    seats: 10,
-    usedSeats: 3,
-    features: [
-      "Unlimited conversations",
-      "AI-powered responses",
-      "Help center & knowledge base",
-      "Team collaboration",
-      "Custom branding",
-    ],
-  };
-
   const save = () => {
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   const tabs: { key: Tab; label: string; icon: typeof Building2 }[] = [
+    { key: "account", label: "Account", icon: User },
     { key: "general", label: "General", icon: Building2 },
     { key: "branding", label: "Branding", icon: Palette },
     { key: "widget", label: "Widget", icon: MessageSquare },
@@ -126,6 +121,97 @@ export default function SettingsPage() {
           </div>
 
           <div className="flex flex-1 flex-col overflow-y-auto">
+            {tab === "account" && (
+              <div className="p-5 space-y-5">
+                <div>
+                  <h2 className="text-sm font-semibold text-ink">Account</h2>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Manage your personal information</p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-[10px] font-medium text-muted-foreground">Name</label>
+                    <div className="flex max-w-md gap-2">
+                      <input
+                        type="text"
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
+                      />
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { updateProfile } = await import("@/lib/auth-service");
+                            await updateProfile(accountName);
+                            setAccountMsg("Name updated");
+                            setTimeout(() => setAccountMsg(""), 2000);
+                          } catch {
+                            setAccountMsg("Failed to update name");
+                          }
+                        }}
+                        className="mt-1 shrink-0 rounded-md bg-ink px-3 py-1.5 text-xs text-primary-foreground"
+                      >
+                        Save
+                      </button>
+                    </div>
+                    {accountMsg && (
+                      <p className="mt-1 text-[10px] text-muted-foreground">{accountMsg}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-medium text-muted-foreground">Email</label>
+                    <p className="mt-1 text-xs text-ink">{user?.email}</p>
+                    <p className="text-[10px] text-muted-foreground">Email cannot be changed</p>
+                  </div>
+
+                  <div className="border-t border-border pt-4">
+                    <h3 className="text-xs font-semibold text-ink mb-3">Change Password</h3>
+                    <div className="space-y-3 max-w-md">
+                      <div>
+                        <label className="text-[10px] font-medium text-muted-foreground">Current Password</label>
+                        <input
+                          type="password"
+                          value={oldPassword}
+                          onChange={(e) => setOldPassword(e.target.value)}
+                          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-ink outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-medium text-muted-foreground">New Password</label>
+                        <input
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-ink outline-none"
+                        />
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const { changePassword } = await import("@/lib/auth-service");
+                            await changePassword(oldPassword, newPassword);
+                            setPasswordMsg("Password updated");
+                            setOldPassword("");
+                            setNewPassword("");
+                            setTimeout(() => setPasswordMsg(""), 2000);
+                          } catch (err: any) {
+                            setPasswordMsg(err.message || "Failed to update password");
+                          }
+                        }}
+                        className="rounded-md bg-ink px-3 py-1.5 text-xs text-primary-foreground"
+                      >
+                        Update Password
+                      </button>
+                      {passwordMsg && (
+                        <p className="text-[10px] text-muted-foreground">{passwordMsg}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {tab === "general" && (
               <div className="p-5 space-y-5">
                 <div>
@@ -430,51 +516,12 @@ export default function SettingsPage() {
                   <h2 className="text-sm font-semibold text-ink">Billing & Plan</h2>
                   <p className="text-[10px] text-muted-foreground mt-0.5">Manage your subscription</p>
                 </div>
-
-                <div className="rounded-lg border border-border bg-surface p-5">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Current Plan</p>
-                      <p className="mt-1 text-2xl font-bold text-ink">{plan.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {plan.price}/{plan.interval} &middot; {plan.usedSeats}/{plan.seats} seats used
-                      </p>
-                    </div>
-                    <button className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                      Change Plan
-                    </button>
-                  </div>
-                  <div className="mt-4 h-1.5 w-full rounded-full bg-border">
-                    <div
-                      className="h-1.5 rounded-full bg-accent transition-all"
-                      style={{ width: `${(plan.usedSeats / plan.seats) * 100}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Plan Features</p>
-                  <div className="space-y-1.5">
-                    {plan.features.map((feature, i) => (
-                      <div key={i} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                        <Check className="h-3 w-3 text-green-500 shrink-0" />
-                        <span className="text-xs text-ink">{feature}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-xs font-medium text-ink">Next billing date</p>
-                        <p className="text-[10px] text-muted-foreground">August 21, 2026</p>
-                      </div>
-                    </div>
-                    <button className="text-[10px] text-accent hover:underline">View Invoices</button>
-                  </div>
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <CreditCard className="h-10 w-10 text-border mb-3" />
+                  <p className="text-sm font-medium text-ink">No billing information yet</p>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">
+                    Billing details will appear here once you set up your subscription.
+                  </p>
                 </div>
               </div>
             )}

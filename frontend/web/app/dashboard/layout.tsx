@@ -11,10 +11,12 @@ import {
   LogOut,
   Menu,
   X,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
 
 const navItems = [
   { icon: Inbox, label: "Inbox", href: "/dashboard/inbox" },
@@ -27,8 +29,40 @@ const navItems = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user) {
+      router.push("/signin");
+      return;
+    }
+    if (!user.organization && pathname !== "/dashboard/workspace-setup") {
+      router.push("/dashboard/workspace-setup");
+    }
+  }, [user, loading, router, pathname]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  const initials = user.name
+    ? user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2)
+    : user.email[0].toUpperCase();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push("/signin");
+  };
 
   return (
     <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-background">
@@ -80,7 +114,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-surface-2 transition-colors hover:bg-surface-2"
             >
               <div className="flex h-full w-full items-center justify-center bg-accent text-[10px] font-medium text-accent-foreground">
-                JD
+                {initials}
               </div>
             </button>
 
@@ -89,10 +123,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <div className="fixed inset-0 z-10" onClick={() => setProfileOpen(false)} />
               <div className="absolute left-full bottom-0 z-20 ml-2 w-40 rounded-lg border border-border bg-card p-2 shadow-lg">
                 <div className="border-b border-border pb-1.5 mb-1.5">
-                  <p className="text-[10px] font-semibold text-ink">Jordan Diaz</p>
-                  <p className="text-[8px] text-muted-foreground">jordan@connect.io</p>
+                  <p className="text-[10px] font-semibold text-ink">{user.name}</p>
+                  <p className="text-[8px] text-muted-foreground">{user.email}</p>
                 </div>
-                <button className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
+                <button
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                >
                   <LogOut className="h-3 w-3" />
                   Log out
                 </button>
@@ -115,7 +152,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onClick={() => setProfileOpen(!profileOpen)}
           className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-accent text-[10px] font-medium text-accent-foreground"
         >
-          JD
+          {initials}
         </button>
       </div>
 
@@ -165,13 +202,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Settings className="h-4 w-4 shrink-0" />
                 Settings
               </Link>
-              <Link
-                href="/signout"
-                className="flex items-center gap-3 rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-surface-2 hover:text-foreground"
               >
                 <LogOut className="h-4 w-4 shrink-0" />
                 Log out
-              </Link>
+              </button>
             </nav>
           </div>
         </>

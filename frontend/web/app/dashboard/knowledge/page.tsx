@@ -41,27 +41,11 @@ type Article = {
   published: boolean;
 };
 
-const defaultCategories: Category[] = [
-  { id: "c1", name: "Getting Started", description: "Setup and onboarding guides", articleCount: 3 },
-  { id: "c2", name: "Account & Billing", description: "Manage your account and subscription", articleCount: 2 },
-  { id: "c3", name: "Features", description: "Feature guides and how-tos", articleCount: 4 },
-  { id: "c4", name: "Troubleshooting", description: "Common issues and solutions", articleCount: 2 },
-];
+const defaultCategories: Category[] = [];
 
-const defaultFAQs: FAQ[] = [
-  { id: "f1", question: "How do I reset my password?", answer: "Go to Settings > Account and click 'Reset Password'. A link will be sent to your email.", category: "account", updatedAt: "2026-07-18" },
-  { id: "f2", question: "What payment methods do you accept?", answer: "We accept all major credit cards, PayPal, and bank transfers for annual plans.", category: "billing", updatedAt: "2026-07-17" },
-  { id: "f3", question: "How do I invite team members?", answer: "Navigate to the Teams section and click 'Invite Member'. Enter their email and they'll receive an invitation.", category: "getting-started", updatedAt: "2026-07-16" },
-  { id: "f4", question: "Can I customize the widget?", answer: "Yes! Go to Widget settings to customize colors, position, and welcome messages.", category: "features", updatedAt: "2026-07-15" },
-  { id: "f5", question: "Is my data secure?", answer: "We use industry-standard encryption and comply with GDPR and SOC 2 standards.", category: "account", updatedAt: "2026-07-14" },
-];
+const defaultFAQs: FAQ[] = [];
 
-const defaultArticles: Article[] = [
-  { id: "a1", title: "Setting up your workspace", content: "Welcome to Connect! This guide walks you through your initial workspace setup...", category: "getting-started", updatedAt: "2026-07-18", published: true },
-  { id: "a2", title: "Managing team permissions", content: "Learn how to configure roles and permissions for your team members...", category: "account", updatedAt: "2026-07-17", published: true },
-  { id: "a3", title: "Widget integration guide", content: "Add Connect to your website with our easy-to-use widget integration...", category: "features", updatedAt: "2026-07-16", published: true },
-  { id: "a4", title: "Handling common errors", content: "Troubleshoot common issues with the platform and widget...", category: "troubleshooting", updatedAt: "2026-07-15", published: false },
-];
+const defaultArticles: Article[] = [];
 
 export default function KnowledgePage() {
   const [tab, setTab] = useState<"faqs" | "articles">("faqs");

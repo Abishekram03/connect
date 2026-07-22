@@ -13,19 +13,6 @@ import {
   isAiConversationAtom,
 } from "../../atoms/widget-atoms";
 
-const PREVIEW_FAQS = [
-  {
-    id: "f1",
-    question: "How do I get started?",
-    answer: "Install the widget snippet and create an inbox from the dashboard.",
-  },
-  {
-    id: "f2",
-    question: "Can I talk to a human?",
-    answer: "Yes, start a conversation and request an agent at any time.",
-  },
-];
-
 interface Props {
   mode?: "preview" | "production";
   onClose?: () => void;
@@ -42,7 +29,7 @@ export const WidgetSelectionScreen = ({
   const organizationId = useAtomValue(organizationIdAtom);
   const [isPending, setIsPending] = useState<"chat" | null>(null);
 
-  const faqs = PREVIEW_FAQS.slice(0, widgetConfig.faqsDisplayCount || PREVIEW_FAQS.length);
+  const faqs: { id: string; question: string; answer: string }[] = [];
 
   const handleStartChat = () => {
     setIsPending("chat");

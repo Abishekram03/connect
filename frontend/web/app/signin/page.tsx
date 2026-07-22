@@ -1,20 +1,37 @@
 "use client";
 
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { AuthShell } from "@/app/landing/components/auth-shell";
+import { useAuth } from "@/hooks/use-auth";
+import { ApiError } from "@/lib/api-client";
 
 export default function SignInPage() {
   const router = useRouter();
+  const { signin } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleDemo = () => {
-    router.push("/dashboard/inbox");
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    router.push("/dashboard/inbox");
+    setError("");
+    setSubmitting(true);
+    try {
+      await signin(email, password);
+      router.push("/dashboard/inbox");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError("Something went wrong. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -31,32 +48,43 @@ export default function SignInPage() {
         </div>
       }
     >
-      <button
-        onClick={handleDemo}
-        className="mb-6 flex w-full items-center justify-between rounded-2xl border border-accent/50 bg-accent/10 px-5 py-4 text-left transition hover:bg-accent/20"
-      >
-        <div className="flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-foreground">
-            <Sparkles className="h-4 w-4" />
-          </span>
-          <div>
-            <div className="text-sm font-medium text-ink">Try the demo workspace</div>
-            <div className="text-xs text-muted-foreground">
-              Instantly explore — no signup required
-            </div>
-          </div>
-        </div>
-        <ArrowRight className="h-4 w-4 text-ink" />
-      </button>
-
       <form onSubmit={handleSubmit} className="space-y-4">
-        <Field label="Work email" type="email" placeholder="you@company.com" required />
-        <Field label="Password" type="password" placeholder="••••••••" required />
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-600">
+            {error}
+          </div>
+        )}
+
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-ink">Work email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            required
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-ink outline-none transition placeholder:text-muted-foreground focus:border-ink"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-ink">Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            required
+            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-ink outline-none transition placeholder:text-muted-foreground focus:border-ink"
+          />
+        </label>
 
         <button
           type="submit"
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-ink py-3 text-sm font-medium text-primary-foreground transition hover:bg-ink/90"
+          disabled={submitting}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-ink py-3 text-sm font-medium text-primary-foreground transition hover:bg-ink/90 disabled:opacity-50"
         >
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Sign in <ArrowRight className="h-4 w-4" />
         </button>
 
@@ -67,35 +95,6 @@ export default function SignInPage() {
           </Link>
         </div>
       </form>
-
-      <div className="mt-6 rounded-lg border border-dashed border-border bg-surface p-3 text-xs text-muted-foreground">
-        <span className="font-mono text-ink">demo@connect.app</span> /{" "}
-        <span className="font-mono text-ink">demo1234</span>
-      </div>
     </AuthShell>
-  );
-}
-
-function Field({
-  label,
-  type = "text",
-  placeholder,
-  required,
-}: {
-  label: string;
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-medium text-ink">{label}</span>
-      <input
-        type={type}
-        placeholder={placeholder}
-        required={required}
-        className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-ink outline-none transition placeholder:text-muted-foreground focus:border-ink"
-      />
-    </label>
   );
 }

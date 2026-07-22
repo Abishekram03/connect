@@ -50,11 +50,7 @@ const TYPE_LABELS: Record<SourceType, string> = {
   document: "Document",
 };
 
-const defaultSources: Source[] = [
-  { id: "s1", type: "article", title: "Getting Started Guide", status: "ready", createdAt: "2026-07-18", chunks: 24 },
-  { id: "s2", type: "website", title: "Company Help Center", url: "https://help.company.com", status: "ready", createdAt: "2026-07-17", chunks: 156 },
-  { id: "s3", type: "document", title: "Product Documentation.pdf", status: "processing", createdAt: "2026-07-19", chunks: 0 },
-];
+const defaultSources: Source[] = [];
 
 export default function AIPage() {
   const [sources, setSources] = useState<Source[]>(defaultSources);

@@ -44,8 +44,8 @@ export function useWidgetSession(
 
       try {
         const result = {
-          sessionToken: `demo-token-${Date.now()}`,
-          sessionId: `demo-session-${Date.now()}`,
+      sessionToken: null,
+      sessionId: null,
           expiresAt: Date.now() + 24 * 60 * 60 * 1000,
         };
 

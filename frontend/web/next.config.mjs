@@ -6,6 +6,10 @@ const nextConfig = {
         source: "/app/:path*",
         destination: "/dashboard/:path*",
       },
+      {
+        source: "/api/:path*",
+        destination: "http://127.0.0.1:8000/api/:path*",
+      },
     ];
   },
   // Security headers for the dashboard
