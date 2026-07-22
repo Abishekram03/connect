@@ -36,193 +36,13 @@ function StatusDot({ online }: { online: boolean }) {
   );
 }
 
-const workspaceTeams = [
-  {
-    name: "Support",
-    members: [
-      { initials: "JD", name: "Jordan Diaz", online: true },
-      { initials: "AL", name: "Alex Li", online: true },
-      { initials: "KM", name: "Katie Moore", online: false },
-    ],
-  },
-  {
-    name: "Sales",
-    members: [
-      { initials: "RN", name: "Ryan Nakamura", online: true },
-      { initials: "SP", name: "Sophia Park", online: false },
-    ],
-  },
-  {
-    name: "Billing",
-    members: [
-      { initials: "TC", name: "Tom Cruz", online: true },
-      { initials: "LV", name: "Lisa Varghese", online: true },
-    ],
-  },
-  {
-    name: "Engineering",
-    members: [
-      { initials: "MK", name: "Mike Kwan", online: false },
-      { initials: "JR", name: "Julia Roth", online: true },
-      { initials: "DP", name: "Dan Peters", online: true },
-    ],
-  },
-];
+const workspaceTeams: { icon: any; name: string; members: { initials: string; name: string; online: boolean }[] }[] = [];
 
-const conversationData = [
-  {
-    id: 1,
-    name: "Sarah Chen",
-    email: "sarah@acme.co",
-    preview: "Hi! I'm having trouble with the API rate limiting. We're hitting the 1000 req/hour cap and need it increased for our production deployment.",
-    time: "2m",
-    unread: true,
-    channel: "chat" as const,
-    status: "urgent" as const,
-    assignee: "JD",
-    avatar: "SC",
-    color: "bg-coral",
-    online: true,
-  },
-  {
-    id: 2,
-    name: "Marcus Johnson",
-    email: "marcus@techstart.io",
-    preview: "Thanks for the quick response! The fix worked perfectly.",
-    time: "15m",
-    unread: false,
-    channel: "email" as const,
-    status: "closed" as const,
-    assignee: null,
-    avatar: "MJ",
-    color: "bg-blue-400",
-    online: false,
-  },
-  {
-    id: 3,
-    name: "Priya Patel",
-    email: "priya@designhub.com",
-    preview: "Is there a way to customize the chat widget colors to match our brand? We need the primary button to be #FF6B35.",
-    time: "1h",
-    unread: true,
-    channel: "chat" as const,
-    status: "open" as const,
-    assignee: "AL",
-    avatar: "PP",
-    color: "bg-emerald-400",
-    online: true,
-  },
-  {
-    id: 4,
-    name: "Alex Rodriguez",
-    email: "alex@buildlab.dev",
-    preview: "Getting a 403 error when trying to access the knowledge base API. Here's the curl command I'm using...",
-    time: "2h",
-    unread: false,
-    channel: "chat" as const,
-    status: "open" as const,
-    assignee: "JD",
-    avatar: "AR",
-    color: "bg-amber-400",
-    online: true,
-  },
-  {
-    id: 5,
-    name: "Emily Watson",
-    email: "emily@shopzone.com",
-    preview: "Do you offer volume discounts? We're looking at about 50 agents and wanted to know if there's an enterprise plan.",
-    time: "3h",
-    unread: false,
-    channel: "email" as const,
-    status: "closed" as const,
-    assignee: null,
-    avatar: "EW",
-    color: "bg-purple-400",
-    online: false,
-  },
-  {
-    id: 6,
-    name: "David Kim",
-    email: "david@codelabs.io",
-    preview: "The AI suggestions are great but sometimes they don't quite match our tone of voice. Can we train it on past conversations?",
-    time: "5h",
-    unread: false,
-    channel: "chat" as const,
-    status: "pending" as const,
-    assignee: "AL",
-    avatar: "DK",
-    color: "bg-rose-400",
-    online: true,
-  },
-];
-
-type Conversation = (typeof conversationData)[0];
-
-const messageData = [
-  {
-    id: 1,
-    from: "customer" as const,
-    name: "Sarah Chen",
-    text: "Hi! I'm having trouble with the API rate limiting. We're hitting the 1000 req/hour cap and need it increased for our production deployment.",
-    time: "10:23 AM",
-  },
-  {
-    id: 2,
-    from: "agent" as const,
-    name: "Jordan Diaz",
-    text: "Hi Sarah! I can help with that. Let me check your current plan and see what we can do. Could you tell me which endpoints you're hitting most frequently?",
-    time: "10:25 AM",
-    seen: true,
-  },
-  {
-    id: 3,
-    from: "customer" as const,
-    name: "Sarah Chen",
-    text: "We're mainly using the conversations endpoint and the messages endpoint. We have about 800 customers and each one triggers multiple API calls.",
-    time: "10:28 AM",
-  },
-  {
-    id: 4,
-    from: "agent" as const,
-    name: "Jordan Diaz",
-    text: "That makes sense. Looking at your account, you're on the Growth plan which has 1000 req/hour. I can temporarily increase this to 5000 req/hour while we figure out a permanent solution.",
-    time: "10:30 AM",
-    isInternal: true,
-  },
-  {
-    id: 5,
-    from: "agent" as const,
-    name: "Jordan Diaz",
-    text: "I've gone ahead and increased your rate limit to 5000 req/hour. This should cover your current needs. For the long term, I'd recommend looking at our Enterprise plan which has unlimited API access.",
-    time: "10:32 AM",
-    seen: false,
-  },
-  {
-    id: 6,
-    from: "customer" as const,
-    name: "Sarah Chen",
-    text: "That's perfect, thank you! 5000 should be more than enough for now. I'll check out the Enterprise plan details.",
-    time: "10:35 AM",
-  },
-  {
-    id: 7,
-    from: "agent" as const,
-    name: "Jordan Diaz",
-    text: "Great! I've also added a note to our team to follow up with you about the Enterprise plan next week. Is there anything else I can help with?",
-    time: "10:38 AM",
-    seen: false,
-  },
-  {
-    id: 8,
-    from: "customer" as const,
-    name: "Sarah Chen",
-    text: "Nope, that's all for now. Thanks so much for the quick help!",
-    time: "10:40 AM",
-  },
-];
+const conversationData: any[] = [];
+const messageData: any[] = [];
 
 export default function InboxPage() {
-  const [activeConvo, setActiveConvo] = useState<Conversation>(conversationData[0]);
+  const [activeConvo, setActiveConvo] = useState<any>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [showDetails] = useState(true);
   const [selectedTeam, setSelectedTeam] = useState("Support");
@@ -243,7 +63,7 @@ export default function InboxPage() {
           <ConversationList
             activeFilter={activeFilter}
             conversations={conversationData}
-            activeId={activeConvo.id}
+            activeId={activeConvo?.id}
             onSelect={setActiveConvo}
           />
           <ChatPanel conversation={activeConvo} messages={messageData} />
@@ -491,9 +311,9 @@ function ConversationList({
   onSelect,
 }: {
   activeFilter: FilterKey;
-  conversations: Conversation[];
+  conversations: any[];
   activeId: number;
-  onSelect: (c: Conversation) => void;
+  onSelect: (c: any) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<string>("Open");
   const [sortBy, setSortBy] = useState<string>("Newest");
@@ -603,26 +423,28 @@ function ChatPanel({
   conversation,
   messages: msgs,
 }: {
-  conversation: Conversation;
+  conversation: any;
   messages: typeof messageData;
 }) {
   const [mode, setMode] = useState<"reply" | "note">("reply");
+
+  if (!conversation) return null;
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2.5">
           <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-medium text-white ${conversation.color}`}
+            className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-medium text-white ${conversation?.color}`}
           >
-            {conversation.avatar}
+            {conversation?.avatar}
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-ink">{conversation.name}</span>
-              <span className="text-[10px] text-muted-foreground">via {conversation.channel}</span>
+              <span className="text-xs font-semibold text-ink">{conversation?.name}</span>
+              <span className="text-[10px] text-muted-foreground">via {conversation?.channel}</span>
             </div>
-            <span className="text-[10px] text-muted-foreground">{conversation.email}</span>
+            <span className="text-[10px] text-muted-foreground">{conversation?.email}</span>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -635,7 +457,7 @@ function ChatPanel({
           <div className="h-4 w-px bg-border" />
           <div className="relative">
             <select
-              value={conversation.assignee || ""}
+              value={conversation?.assignee || ""}
               onChange={() => {}}
               className="appearance-none rounded-md border border-border bg-surface pl-2 pr-5 py-1 text-[10px] text-ink outline-none cursor-pointer"
             >
@@ -648,7 +470,7 @@ function ChatPanel({
           </div>
           <div className="relative">
             <select
-              value={conversation.status}
+              value={conversation?.status}
               onChange={() => {}}
               className="appearance-none rounded-md border border-border bg-surface pl-2 pr-5 py-1 text-[10px] text-ink outline-none cursor-pointer"
             >
@@ -790,8 +612,10 @@ function CollapsibleSection({
   );
 }
 
-function UserDetailsPanel({ conversation }: { conversation: Conversation }) {
+function UserDetailsPanel({ conversation }: { conversation: any }) {
   const [tab, setTab] = useState<"details" | "copilot">("details");
+
+  if (!conversation) return null;
 
   return (
     <div className="flex w-full md:w-60 shrink-0 flex-col border-l border-border">

@@ -30,27 +30,6 @@ const StatusIcon = ({ status }: { status: string }) => {
   }
 };
 
-const MOCK_CONVERSATIONS = [
-  {
-    _id: "mock1",
-    title: "Product Support",
-    lastMessagePreview: "Hi, I need help with my integration.",
-    _creationTime: Date.now(),
-    createdAt: Date.now(),
-    status: "open",
-    isHistory: false,
-  },
-  {
-    _id: "mock2",
-    title: "Billing Question",
-    lastMessagePreview: "Your invoice has been updated.",
-    _creationTime: Date.now() - 86400000 * 2,
-    createdAt: Date.now() - 86400000 * 2,
-    status: "resolved",
-    isHistory: true,
-  },
-];
-
 interface Props {
   mode?: "preview" | "production";
 }
@@ -64,7 +43,7 @@ export const WidgetInboxScreen = ({
   const widgetConfig = useAtomValue(widgetConfigAtom);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
 
-  const conversations = MOCK_CONVERSATIONS;
+  const conversations: any[] = [];
 
   const handleAskQuestion = () => {
     setConversationId(`conv-${Date.now()}`);

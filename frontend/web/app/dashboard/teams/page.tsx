@@ -48,16 +48,8 @@ const RULE_LABELS: Record<TeamRule, string> = {
   "max-members": "Max 10 members",
 };
 
-const defaultTeams: Team[] = [
-  { id: "t1", name: "Support", description: "Customer support team", rules: ["admin-approval"], memberIds: ["m1", "m2"], createdAt: "2026-07-15" },
-  { id: "t2", name: "Sales", description: "Sales and conversions", rules: ["domain-restrict"], memberIds: ["m1"], createdAt: "2026-07-16" },
-];
-
-const defaultMembers: Member[] = [
-  { id: "m1", name: "Alice Chen", email: "alice@company.com", role: "admin", status: "active", invitedAt: "2026-07-14" },
-  { id: "m2", name: "Bob Smith", email: "bob@company.com", role: "agent", status: "active", invitedAt: "2026-07-15" },
-  { id: "m3", name: "Carol Davis", email: "carol@company.com", role: "agent", status: "invited", invitedAt: "2026-07-18" },
-];
+const defaultTeams: Team[] = [];
+const defaultMembers: Member[] = [];
 
 export default function TeamsPage() {
   const [tab, setTab] = useState<Tab>("teams");

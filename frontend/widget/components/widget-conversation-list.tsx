@@ -9,10 +9,7 @@ interface WidgetConversationListProps {
   primaryColor?: string;
 }
 
-const MOCK_CONVERSATIONS = [
-  { _id: "c1", title: "Product Support", lastMessagePreview: "I need help with...", status: "open", createdAt: Date.now() - 3600000 },
-  { _id: "c2", title: "Billing Question", lastMessagePreview: "My invoice was...", status: "resolved", createdAt: Date.now() - 86400000 },
-];
+const MOCK_CONVERSATIONS: { _id: string; contactName: string; lastMessage: string; status: string }[] = [];
 
 export function WidgetConversationList({
   sessionToken,

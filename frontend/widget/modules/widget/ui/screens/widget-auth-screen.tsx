@@ -26,14 +26,12 @@ export const WidgetAuthScreen = ({ mode }: Props) => {
     e.preventDefault();
     if (!email) return;
     setIsSubmitting(true);
-    setSessionToken("demo-token");
     setScreen("selection");
     setIsSubmitting(false);
   };
 
   const handleSkip = async () => {
     setIsSubmitting(true);
-    setSessionToken("demo-token");
     setScreen("selection");
     setIsSubmitting(false);
   };

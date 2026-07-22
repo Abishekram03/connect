@@ -1,6 +1,6 @@
 import { Instrument_Serif, Inter_Tight, JetBrains_Mono } from "next/font/google";
 import type { Metadata } from "next";
-import { ThemeProvider } from "@/components/theme-provider";
+import { Providers } from "@/components/providers";
 import "./globals.css";
 
 const display = Instrument_Serif({
@@ -53,7 +53,7 @@ export default function RootLayout({
         suppressHydrationWarning={true}
         className="min-h-screen bg-background font-sans text-foreground antialiased"
       >
-        <ThemeProvider>{children}</ThemeProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

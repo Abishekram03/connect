@@ -25,42 +25,6 @@ interface HelpArticle {
   content: string;
 }
 
-const PREVIEW_COLLECTIONS: HelpCollection[] = [
-  { id: "c1", name: "Getting Started", description: "Basics to get up and running." },
-  { id: "c2", name: "Billing", description: "Plans, invoices, and payments." },
-];
-
-const PREVIEW_ARTICLES: Record<string, HelpArticle[]> = {
-  c1: [
-    {
-      id: "a1",
-      title: "Install the widget",
-      excerpt: "Add the script tag to your site and configure org id.",
-      content: "Paste the provided script tag into your site's <head> and pass your organization id via data attributes.",
-    },
-    {
-      id: "a1b",
-      title: "Connect your data",
-      excerpt: "Wire your backend to start answering questions.",
-      content: "1. Create an API token in the dashboard.\n2. Add it to your backend client.\n3. Test a sample request to confirm connectivity.",
-    },
-  ],
-  c2: [
-    {
-      id: "a2",
-      title: "Update payment method",
-      excerpt: "Manage cards and billing emails from the dashboard.",
-      content: "Go to Settings → Billing to update your payment method. Changes apply immediately to new invoices.",
-    },
-    {
-      id: "a2b",
-      title: "View invoices",
-      excerpt: "Download past invoices anytime.",
-      content: "Open **Billing → Invoices** and click any invoice to download the PDF.",
-    },
-  ],
-};
-
 interface Props {
   mode?: "preview" | "production";
 }
@@ -77,8 +41,8 @@ export const WidgetHelpScreen = ({
   const [activeArticleId, setActiveArticleId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const collections = PREVIEW_COLLECTIONS;
-  const articles = activeCollectionId ? PREVIEW_ARTICLES[activeCollectionId] || [] : [];
+  const collections: HelpCollection[] = [];
+  const articles: HelpArticle[] = [];
 
   const selectedCollection = collections.find((c) => c.id === activeCollectionId) || null;
   const selectedArticle = articles.find((a) => a.id === activeArticleId) || null;
