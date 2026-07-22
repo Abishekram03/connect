@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: oklch(0.955 0.01 87);
+    --foreground: oklch(0.16 0.015 60);
+    --surface: oklch(0.965 0.012 88);
+    --surface-2: oklch(0.94 0.018 85);
+    --ink: oklch(0.16 0.015 60);
+    --muted: oklch(0.94 0.012 85);
+    --muted-foreground: oklch(0.44 0.014 70);
+    --border: oklch(0.88 0.014 80);
+    --input: oklch(0.88 0.014 80);
+    --ring: oklch(0.16 0.015 60);
+    --primary: oklch(0.16 0.015 60);
+    --primary-foreground: oklch(0.985 0.008 90);
+    --accent: oklch(0.9 0.19 125);
+    --accent-foreground: oklch(0.16 0.015 60);
+    --coral: oklch(0.72 0.18 32);
+    --card: oklch(0.985 0.008 90);
+    --card-foreground: oklch(0.16 0.015 60);
+    --popover: oklch(0.985 0.008 90);
+    --popover-foreground: oklch(0.16 0.015 60);
+    --secondary: oklch(0.94 0.012 85);
+    --secondary-foreground: oklch(0.16 0.015 60);
+    --destructive: oklch(0.6 0.22 27);
+    --destructive-foreground: oklch(0.985 0.008 90);
+  }
+
+  .dark {
+    --background: oklch(0.18 0.012 280);
+    --foreground: oklch(0.88 0.015 280);
+    --surface: oklch(0.22 0.014 280);
+    --surface-2: oklch(0.26 0.016 280);
+    --ink: oklch(0.92 0.012 280);
+    --muted: oklch(0.26 0.016 280);
+    --muted-foreground: oklch(0.6 0.014 280);
+    --border: oklch(0.3 0.018 280);
+    --input: oklch(0.3 0.018 280);
+    --ring: oklch(0.6 0.014 280);
+    --primary: oklch(0.92 0.012 280);
+    --primary-foreground: oklch(0.18 0.012 280);
+    --accent: oklch(0.75 0.19 125);
+    --accent-foreground: oklch(0.18 0.012 280);
+    --coral: oklch(0.72 0.18 32);
+    --card: oklch(0.22 0.014 280);
+    --card-foreground: oklch(0.88 0.015 280);
+    --popover: oklch(0.24 0.016 280);
+    --popover-foreground: oklch(0.88 0.015 280);
+    --secondary: oklch(0.26 0.016 280);
+    --secondary-foreground: oklch(0.88 0.015 280);
+    --destructive: oklch(0.6 0.22 27);
+    --destructive-foreground: oklch(0.985 0.008 90);
+  }
+
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+  body {
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar-button:vertical:start,
+::-webkit-scrollbar-button:vertical:end,
+::-webkit-scrollbar-button:horizontal:start,
+::-webkit-scrollbar-button:horizontal:end {
+  display: none;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 0;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+@layer utilities {
+  .grain-bg {
+    position: relative;
+    isolation: isolate;
+  }
+  .grain-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    z-index: -1;
+  }
+
+  .live-dot {
+    animation: ticker-pulse 1.8s ease-in-out infinite;
+  }
+
+  .float-in {
+    animation: float-in 0.9s ease-out both;
+  }
+
+  .msg-in {
+    animation: msg-in 0.5s ease-out both;
+  }
+
+  .typing-dot {
+    animation: typing 1.2s infinite;
+  }
+}
+
+@keyframes ticker-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes float-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes msg-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes typing {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
