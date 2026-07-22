@@ -1,9 +1,35 @@
-node_modules/
-.next/
-.vercel/
-*.local
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Django
+backend/db.sqlite3
+backend/media/
+backend/staticfiles/
+
+# Environment
 .env
-.env*.local
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-*.tsbuildinfo
-next-env.d.ts
+Thumbs.db
+
+# Next.js
+frontend/web/.next/
+frontend/widget/.next/
+
+# Node
+node_modules/
