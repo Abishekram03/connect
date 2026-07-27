@@ -67,15 +67,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-background">
       {/* Desktop sidebar — hidden on mobile */}
-      <aside className="hidden md:flex md:w-12 md:shrink-0 md:flex-col md:items-center md:bg-background md:py-2.5">
+      <aside className="hidden md:flex md:w-16 md:shrink-0 md:flex-col md:items-center md:bg-background md:py-3">
         <Link
           href="/dashboard/inbox"
-          className="mb-5 flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-xs font-bold text-primary-foreground"
+          className="mb-6 flex h-9 w-9 items-center justify-center rounded-lg bg-ink text-sm font-bold text-primary-foreground"
         >
           C
         </Link>
 
-        <nav className="flex flex-1 flex-col items-center gap-0.5">
+        <nav className="flex flex-1 flex-col items-center gap-1">
           {navItems.map(({ icon: Icon, label, href }) => {
             const isActive = pathname === href || pathname?.startsWith(href);
             return (
@@ -83,37 +83,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={href}
                 href={href}
                 title={label}
-                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
                   isActive
                     ? "bg-ink text-primary-foreground"
                     : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
                 }`}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className="h-5 w-5" />
               </Link>
             );
           })}
         </nav>
 
-        <div className="mt-auto flex flex-col items-center gap-0.5">
+        <div className="mt-auto flex flex-col items-center gap-1">
           <Link
             href="/dashboard/settings"
             title="Settings"
-            className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+            className={`flex h-10 w-10 items-center justify-center rounded-lg transition-colors ${
               pathname === "/dashboard/settings"
                 ? "bg-ink text-primary-foreground"
                 : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
             }`}
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-5 w-5" />
           </Link>
 
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-surface-2 transition-colors hover:bg-surface-2"
+              className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-surface-2 transition-colors hover:bg-surface-2"
             >
-              <div className="flex h-full w-full items-center justify-center bg-accent text-[10px] font-medium text-accent-foreground">
+              <div className="flex h-full w-full items-center justify-center bg-accent text-xs font-medium text-accent-foreground">
                 {initials}
               </div>
             </button>
@@ -121,16 +121,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {profileOpen && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setProfileOpen(false)} />
-              <div className="absolute left-full bottom-0 z-20 ml-2 w-40 rounded-lg border border-border bg-card p-2 shadow-lg">
-                <div className="border-b border-border pb-1.5 mb-1.5">
-                  <p className="text-[10px] font-semibold text-ink">{user.name}</p>
-                  <p className="text-[8px] text-muted-foreground">{user.email}</p>
+              <div className="absolute left-full bottom-0 z-20 ml-2 w-48 rounded-lg border border-border bg-card p-3 shadow-lg">
+                <div className="border-b border-border pb-2 mb-2">
+                  <p className="text-xs font-semibold text-ink">{user.name}</p>
+                  <p className="text-[10px] text-muted-foreground">{user.email}</p>
                 </div>
                 <button
                   onClick={handleLogout}
-                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                  className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
                 >
-                  <LogOut className="h-3 w-3" />
+                  <LogOut className="h-3.5 w-3.5" />
                   Log out
                 </button>
               </div>
@@ -141,16 +141,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
 
       {/* Mobile top bar */}
-      <div className="flex md:hidden shrink-0 items-center justify-between border-b border-border bg-card px-3 py-2">
+      <div className="flex md:hidden shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3">
         <button onClick={() => setMobileMenuOpen(true)} className="rounded-lg p-1.5 text-ink hover:bg-surface-2">
-          <Menu className="h-5 w-5" />
+          <Menu className="h-6 w-6" />
         </button>
-        <Link href="/dashboard/inbox" className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink text-[10px] font-bold text-white">
+        <Link href="/dashboard/inbox" className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-xs font-bold text-white">
           C
         </Link>
         <button
           onClick={() => setProfileOpen(!profileOpen)}
-          className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-accent text-[10px] font-medium text-accent-foreground"
+          className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-accent text-xs font-medium text-accent-foreground"
         >
           {initials}
         </button>
@@ -160,17 +160,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {mobileMenuOpen && (
         <>
           <div className="fixed inset-0 z-40 bg-black/40 md:hidden" onClick={() => setMobileMenuOpen(false)} />
-          <div className="fixed inset-y-0 left-0 z-50 w-56 bg-card p-3 shadow-lg md:hidden">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-ink text-[10px] font-bold text-white">C</div>
-                <span className="text-xs font-semibold text-ink">Connect</span>
+          <div className="fixed inset-y-0 left-0 z-50 w-64 bg-card p-4 shadow-lg md:hidden">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-xs font-bold text-white">C</div>
+                <span className="text-sm font-semibold text-ink">Connect</span>
               </div>
-              <button onClick={() => setMobileMenuOpen(false)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground">
-                <X className="h-4 w-4" />
+              <button onClick={() => setMobileMenuOpen(false)} className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <nav className="space-y-0.5">
+            <nav className="space-y-1">
               {navItems.map(({ icon: Icon, label, href }) => {
                 const isActive = pathname === href || pathname?.startsWith(href);
                 return (
@@ -178,28 +178,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     key={href}
                     href={href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                       isActive
                         ? "bg-ink text-primary-foreground font-medium"
                         : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
                     }`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon className="h-5 w-5 shrink-0" />
                     {label}
                   </Link>
                 );
               })}
-              <div className="my-2 border-t border-border" />
+              <div className="my-3 border-t border-border" />
               <Link
                 href="/dashboard/settings"
                 onClick={() => setMobileMenuOpen(false)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-xs transition-colors ${
+                className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                   pathname === "/dashboard/settings"
                     ? "bg-ink text-primary-foreground font-medium"
                     : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
                 }`}
               >
-                <Settings className="h-4 w-4 shrink-0" />
+                <Settings className="h-5 w-5 shrink-0" />
                 Settings
               </Link>
               <button
@@ -207,9 +207,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   setMobileMenuOpen(false);
                   handleLogout();
                 }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-xs text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-muted-foreground hover:bg-surface-2 hover:text-foreground"
               >
-                <LogOut className="h-4 w-4 shrink-0" />
+                <LogOut className="h-5 w-5 shrink-0" />
                 Log out
               </button>
             </nav>
@@ -218,20 +218,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       )}
 
       {/* Mobile bottom nav — visible only on mobile */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-border bg-card px-2 py-1 md:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-border bg-card px-2 py-1.5 md:hidden">
         {navItems.slice(0, 5).map(({ icon: Icon, label, href }) => {
           const isActive = pathname === href || pathname?.startsWith(href);
           return (
             <Link
               key={href}
               href={href}
-              className={`flex flex-col items-center gap-0.5 rounded-lg px-2 py-1 text-[10px] transition-colors ${
+              className={`flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-xs transition-colors ${
                 isActive
                   ? "text-accent"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-5 w-5" />
               <span className="leading-none">{label}</span>
             </Link>
           );
@@ -239,9 +239,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {navItems.length > 5 && (
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="flex flex-col items-center gap-0.5 rounded-lg px-2 py-1 text-[10px] text-muted-foreground"
+            className="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-muted-foreground"
           >
-            <Menu className="h-4 w-4" />
+            <Menu className="h-5 w-5" />
             <span className="leading-none">More</span>
           </button>
         )}

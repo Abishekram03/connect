@@ -1,299 +1,834 @@
 "use client";
 
+import { Search, Send, Phone, Mail, MoreHorizontal, Loader2, ChevronDown, ChevronRight, UserCheck, StickyNote, Paperclip, Sparkles, Smile, Bot, MessageSquare, FileText, Globe, Clock, Monitor, Tag, Languages, Archive, Star, Trash2, UserPlus } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useAuth } from "@/hooks/use-auth";
 import {
-  Search,
-  MoreHorizontal,
-  Phone,
-  Mail,
-  MessageSquare,
-  Send,
-  Paperclip,
-  Smile,
-  Sparkles,
-  CheckCheck,
-  ChevronDown,
-  ChevronRight,
-  Inbox,
-  AtSign,
-  UserCheck,
-  LayoutDashboard,
-  Users,
-  PenLine,
-  Plus,
-  Bot,
-} from "lucide-react";
-import { useState } from "react";
+  fetchConversations,
+  fetchConversation,
+  fetchPastConversations,
+  sendMessage,
+  updateConversation,
+  assignConversation,
+  fetchAgents,
+  type Conversation,
+  type ConversationDetail,
+  type Message,
+  type Agent,
+} from "@/lib/conversations-service";
 
-type FilterKey = "assigned" | "mentioned" | "all" | "dashboard";
-
-function StatusDot({ online }: { online: boolean }) {
-  return (
-    <div
-      className={`absolute bottom-0 right-0 h-2.5 w-2.5 translate-x-1/3 translate-y-1/3 rounded-sm border-2 border-card ${
-        online ? "bg-accent" : "bg-surface-2"
-      }`}
-    />
-  );
-}
-
-const workspaceTeams: { icon: any; name: string; members: { initials: string; name: string; online: boolean }[] }[] = [];
-
-const conversationData: any[] = [];
-const messageData: any[] = [];
+type FilterKey = "all" | "assigned" | "unassigned" | "closed";
 
 export default function InboxPage() {
-  const [activeConvo, setActiveConvo] = useState<any>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
-  const [showDetails] = useState(true);
-  const [selectedTeam, setSelectedTeam] = useState("Support");
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeConvo, setActiveConvo] = useState<ConversationDetail | null>(null);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [msgType, setMsgType] = useState<"reply" | "note">("reply");
+  const [sending, setSending] = useState(false);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [showDetails, setShowDetails] = useState(true);
+  const [autoTranslate, setAutoTranslate] = useState(false);
+  const [translateToast, setTranslateToast] = useState<{ show: boolean; lang: string }>({ show: false, lang: "" });
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [assignSubOpen, setAssignSubOpen] = useState(false);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const priorityRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const [detailTab, setDetailTab] = useState<"details" | "copilot">("details");
+  const [copilotInput, setCopilotInput] = useState("");
+  const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const copilotEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (statusRef.current && !statusRef.current.contains(e.target as Node)) setStatusOpen(false);
+      if (priorityRef.current && !priorityRef.current.contains(e.target as Node)) setPriorityOpen(false);
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) { setMoreOpen(false); setAssignSubOpen(false); }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    loadConversations();
+    fetchAgents().then(setAgents).catch(() => {});
+  }, [filter]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
+    copilotEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [copilotMessages]);
+
+  const loadConversations = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, string> = {};
+      if (filter === "assigned") params.assignee = "me";
+      else if (filter === "unassigned") params.assignee = "unassigned";
+      else if (filter === "closed") params.status = "closed";
+      else params.status = "open";
+      const res = await fetchConversations(params);
+      setConversations(res.results);
+    } catch {
+      setConversations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [filter]);
+
+  const selectConversation = async (id: string) => {
+    setActiveId(id);
+    setLoadingDetail(true);
+    try {
+      const detail = await fetchConversation(id);
+      setActiveConvo(detail);
+      setMessages(detail.messages || []);
+    } catch {
+      setActiveConvo(null);
+      setMessages([]);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!replyText.trim() || !activeId || sending) return;
+    setSending(true);
+    try {
+      const msg = await sendMessage(activeId, replyText.trim(), msgType);
+      setMessages((prev) => [...prev, msg]);
+      setReplyText("");
+      loadConversations();
+    } catch {
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const handleAssign = async (assigneeId?: string) => {
+    if (!activeId) return;
+    try {
+      const updated = await assignConversation(activeId, assigneeId);
+      setActiveConvo(updated);
+      loadConversations();
+    } catch {}
+  };
+
+  const handleStatusChange = async (status: string) => {
+    if (!activeId) return;
+    try {
+      const updated = await updateConversation(activeId, { status });
+      setActiveConvo(updated);
+      loadConversations();
+    } catch {}
+  };
+
+  const handlePriorityChange = async (priority: string) => {
+    if (!activeId) return;
+    try {
+      const updated = await updateConversation(activeId, { priority });
+      setActiveConvo(updated);
+      loadConversations();
+    } catch {}
+  };
+
+  const handleCopilotSend = async (text?: string) => {
+    const msg = (text || copilotInput).trim();
+    if (!msg || copilotLoading) return;
+    setCopilotMessages((prev) => [...prev, { role: "user", text: msg }]);
+    setCopilotInput("");
+    setCopilotLoading(true);
+    // Simulate AI response — replace with real API call later
+    setTimeout(() => {
+      const responses: Record<string, string> = {
+        summarize: "**Conversation Summary**\n\nThis customer is asking about pricing for the Enterprise plan. Key concerns:\n- Wants to know about volume discounts\n- Needs SSO integration\n- Asked about SLA guarantees\n\n**Suggested next action:** Share the Enterprise pricing sheet and schedule a call with the sales team.",
+        key: "**Key Information**\n\n- **Customer:** " + (activeConvo?.customer_name || "Unknown") + "\n- **Issue:** Product pricing inquiry\n- **Priority:** " + (activeConvo?.priority || "normal") + "\n- **Channel:** " + (activeConvo?.channel || "—") + "\n- **Messages:** " + (activeConvo?.message_count || 0) + "\n- **Status:** " + (activeConvo?.status || "open"),
+        sentiment: "**Sentiment Analysis**\n\nThe overall tone of this conversation is **neutral to positive**. The customer is engaging constructively and asking specific questions about features, which indicates genuine interest rather than frustration.",
+      };
+      let reply = responses[msg.toLowerCase()] || "I've analyzed this conversation. Here are the key takeaways:\n\n1. The customer is asking about product features and pricing\n2. They seem interested but need more information\n3. Consider following up with a detailed proposal\n\nIs there anything specific you'd like me to look into?";
+      setCopilotMessages((prev) => [...prev, { role: "assistant", text: reply }]);
+      setCopilotLoading(false);
+    }, 1200);
+  };
+
+  const copilotSuggestions = [
+    { label: "Summarize", key: "summarize" },
+    { label: "Key info", key: "key" },
+    { label: "Sentiment", key: "sentiment" },
+  ];
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    const now = new Date();
+    const diff = now.getTime() - d.getTime();
+    if (diff < 60000) return "Just now";
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  };
+
+  const getInitials = (name: string) =>
+    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
+
+  const channelIcons: Record<string, React.ReactNode> = {
+    widget: (
+      <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
+        <rect x="1" y="2" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.4" fill="none" />
+        <path d="M5 14h6l-1.5-2H6.5L5 14z" fill="currentColor" />
+      </svg>
+    ),
+    email: (
+      <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
+        <rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+        <path d="M1 5l7 4.5L15 5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      </svg>
+    ),
+    whatsapp: (
+      <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
+        <path d="M8 1a7 7 0 00-6.3 10.3L1 15l3.8-1A7 7 0 108 1z" stroke="currentColor" strokeWidth="1.3" fill="none" />
+        <path d="M5.5 5.5c0 0 .5 1 1.5 2s2 1.5 2 1.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        <path d="M5 5.5c0 0 .5 2 2 3.5s3.5 2 3.5 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    ),
+    api: (
+      <svg viewBox="0 0 16 16" fill="none" className="h-3 w-3">
+        <path d="M10 4l4 4-4 4M6 12l-4-4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  };
+
+  const channelColors: Record<string, string> = {
+    widget: "bg-emerald-500",
+    email: "bg-blue-500",
+    whatsapp: "bg-green-600",
+    api: "bg-purple-500",
+  };
+
+  const isLive = (c: Conversation) => {
+    if (c.status !== "open") return false;
+    if (!c.last_message?.created_at) return false;
+    const diff = Date.now() - new Date(c.last_message.created_at).getTime();
+    return diff < 180000;
+  };
+
+  const customerLang = (() => {
+    if (!activeConvo?.location) return null;
+    const loc = activeConvo.location.toLowerCase();
+    if (loc.includes("germany") || loc.includes("hamburg") || loc.includes("berlin")) return { code: "de", name: "German" };
+    if (loc.includes("france") || loc.includes("paris")) return { code: "fr", name: "French" };
+    if (loc.includes("spain") || loc.includes("madrid") || loc.includes("barcelona")) return { code: "es", name: "Spanish" };
+    if (loc.includes("italy") || loc.includes("rome") || loc.includes("milan")) return { code: "it", name: "Italian" };
+    if (loc.includes("netherlands") || loc.includes("amsterdam")) return { code: "nl", name: "Dutch" };
+    if (loc.includes("japan") || loc.includes("tokyo")) return { code: "ja", name: "Japanese" };
+    if (loc.includes("china") || loc.includes("beijing") || loc.includes("shanghai")) return { code: "zh", name: "Chinese" };
+    return null;
+  })();
+
+  const filterOptions: { key: FilterKey; label: string }[] = [
+    { key: "all", label: "Open" },
+    { key: "assigned", label: "Mine" },
+    { key: "unassigned", label: "Unassigned" },
+    { key: "closed", label: "Closed" },
+  ];
 
   return (
-    <div className="flex h-full flex-col p-0 md:pl-3 md:pt-3">
-      <div className="flex flex-1 overflow-hidden rounded-none md:rounded-tl-lg bg-card shadow-sm">
-        <SectionSidebar
-        activeFilter={activeFilter}
-        onFilterChange={setActiveFilter}
-        selectedTeam={selectedTeam}
-        onTeamChange={setSelectedTeam}
-      />
-      {activeFilter === "dashboard" ? (
-        <DashboardView />
-      ) : (
-        <>
-          <ConversationList
-            activeFilter={activeFilter}
-            conversations={conversationData}
-            activeId={activeConvo?.id}
-            onSelect={setActiveConvo}
-          />
-          <ChatPanel conversation={activeConvo} messages={messageData} />
-          {showDetails && <UserDetailsPanel conversation={activeConvo} />}
-        </>
-      )}
+    <div className="flex h-full flex-col md:pl-3">
+      {/* Auto-translate toast */}
+      <div
+        className={`fixed left-1/2 top-4 z-50 -translate-x-1/2 transition-all duration-300 ease-out ${
+          translateToast.show ? "translate-y-0 opacity-100" : "-translate-y-16 opacity-0 pointer-events-none"
+        }`}
+      >
+        <div className="flex items-center gap-2 rounded-lg border border-accent/25 bg-white px-4 py-2 shadow-lg">
+          <Languages className="h-4 w-4 text-accent" />
+          <span className="text-sm font-medium text-ink">
+            Auto translated to <span className="text-accent font-semibold">{translateToast.lang}</span>
+          </span>
+        </div>
       </div>
-    </div>
-  );
-}
-
-function DashboardView() {
-  return (
-    <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {[
-          { label: "Total Conversations", value: "1,247", change: "+12%", up: true },
-          { label: "Resolved Today", value: "86", change: "+8%", up: true },
-          { label: "Avg Response Time", value: "2.4m", change: "-18%", up: true },
-          { label: "Customer Satisfaction", value: "94%", change: "+2%", up: true },
-        ].map((kpi) => (
-          <div key={kpi.label} className="rounded-lg bg-card shadow-sm p-3">
-            <p className="text-[10px] font-medium text-muted-foreground">{kpi.label}</p>
-            <p className="mt-1 text-lg font-semibold text-ink">{kpi.value}</p>
-            <p className={`mt-0.5 text-[10px] ${kpi.up ? "text-accent-foreground" : "text-red-500"}`}>
-              {kpi.change} vs last week
-            </p>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
-        <div className="rounded-lg bg-card shadow-sm p-3">
-          <h3 className="text-xs font-semibold text-ink">Conversations by Channel</h3>
-          <div className="mt-3 space-y-2">
-            {[
-              { channel: "Chat", count: 680, pct: 55, color: "bg-accent" },
-              { channel: "Email", count: 370, pct: 30, color: "bg-blue-400" },
-              { channel: "Phone", count: 197, pct: 15, color: "bg-amber-400" },
-            ].map((c) => (
-              <div key={c.channel}>
-                <div className="flex items-center justify-between text-[10px]">
-                  <span className="text-muted-foreground">{c.channel}</span>
-                  <span className="text-ink">{c.count}</span>
-                </div>
-                <div className="mt-0.5 h-1.5 rounded-full bg-surface-2">
-                  <div className={`h-1.5 rounded-full ${c.color}`} style={{ width: `${c.pct}%` }} />
-                </div>
-              </div>
+      <div className="flex flex-1 overflow-hidden bg-card shadow-sm">
+        {/* Left sidebar — conversation list */}
+        <div className="flex w-full md:w-80 shrink-0 flex-col border-r border-border">
+          <div className="flex items-center gap-1 border-b border-border px-3 py-2.5">
+            {filterOptions.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => { setFilter(f.key); setActiveId(null); setActiveConvo(null); }}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filter === f.key
+                    ? "bg-ink text-primary-foreground"
+                    : "text-muted-foreground hover:text-ink"
+                }`}
+              >
+                {f.label}
+              </button>
             ))}
           </div>
-        </div>
 
-        <div className="rounded-lg bg-card shadow-sm p-3">
-          <h3 className="text-xs font-semibold text-ink">Agent Performance</h3>
-          <div className="mt-3 space-y-2">
-            {[
-              { name: "Jordan D.", resolved: 42, avg: "1.8m" },
-              { name: "Alex L.", resolved: 38, avg: "2.1m" },
-              { name: "Katie M.", resolved: 31, avg: "2.5m" },
-            ].map((a) => (
-              <div key={a.name} className="flex items-center justify-between rounded-md bg-surface px-2 py-1.5">
-                <div className="flex items-center gap-2">
-                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-ink text-[8px] font-medium text-primary-foreground">
-                    {a.name.split(" ").map((n) => n[0]).join("")}
-                  </div>
-                  <span className="text-[11px] text-ink">{a.name}</span>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-                  <span>{a.resolved} resolved</span>
-                  <span>{a.avg}</span>
-                </div>
-              </div>
-            ))}
+          <div className="relative border-b border-border px-3 py-2.5">
+            <Search className="absolute left-5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search conversations..."
+              className="w-full rounded-md border border-border bg-surface pl-8 pr-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+            />
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-const sectionTitles: Record<FilterKey, string> = {
-  assigned: "Assigned to me",
-  mentioned: "@ Mentioned",
-  all: "All",
-  dashboard: "Dashboard",
-};
-
-const filterItems: { key: FilterKey; label: string; icon: React.ComponentType<{ className?: string }>; count: number }[] = [
-  { key: "assigned", label: "Assigned to me", icon: UserCheck, count: 5 },
-  { key: "mentioned", label: "@ Mentioned", icon: AtSign, count: 2 },
-  { key: "all", label: "All", icon: Inbox, count: 24 },
-];
-
-function SectionSidebar({
-  activeFilter,
-  onFilterChange,
-  selectedTeam,
-  onTeamChange,
-}: {
-  activeFilter: FilterKey;
-  onFilterChange: (key: FilterKey) => void;
-  selectedTeam: string;
-  onTeamChange: (team: string) => void;
-}) {
-  const [teamOpen, setTeamOpen] = useState(false);
-  const role: "admin" | "agent" = "admin";
-
-  const currentTeam = workspaceTeams.find((t) => t.name === selectedTeam);
-
-  return (
-    <div className="flex w-full md:w-48 shrink-0 flex-col border-r border-border">
-      <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-        <h2 className="text-xs font-semibold text-ink">Inbox</h2>
-        <button className="rounded-md p-0.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-          <MoreHorizontal className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <div className="overflow-y-auto p-1.5">
-        <nav className="space-y-0.5">
-        {filterItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeFilter === item.key;
-          return (
-            <button
-              key={item.key}
-              onClick={() => onFilterChange(item.key)}
-              className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-                isActive
-                  ? "bg-ink text-primary-foreground"
-                  : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5 shrink-0" />
-              <span className="flex-1">{item.label}</span>
-              {item.count > 0 && (
-                <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                    isActive
-                      ? "bg-primary-foreground/20 text-primary-foreground"
-                      : "bg-surface-2 text-muted-foreground"
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="px-4 py-12 text-center">
+                <p className="text-sm text-muted-foreground">No conversations</p>
+              </div>
+            ) : (
+              conversations.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => selectConversation(c.id)}
+                  className={`flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors hover:bg-surface-2 ${
+                    activeId === c.id ? "bg-surface ring-1 ring-inset ring-accent/25" : ""
                   }`}
                 >
-                  {item.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-            </nav>
+                  <div className="relative shrink-0">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-foreground">
+                      {getInitials(c.customer_name || c.customer_email)}
+                    </div>
+                    <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] border-card text-white ${channelColors[c.channel] || "bg-surface-2"}`}>
+                      {channelIcons[c.channel] || channelIcons.widget}
+                    </div>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-ink">
+                        {c.customer_name || c.customer_email || "Unknown"}
+                      </span>
+                      {isLive(c) ? (
+                        <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-green-600">
+                          <span className="relative flex h-1.5 w-1.5">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                          </span>
+                          Live
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {c.last_message?.body || c.subject || "No messages yet"}
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                        c.status === "open" ? "bg-green-100 text-green-700" :
+                        c.status === "pending" ? "bg-yellow-100 text-yellow-700" :
+                        "bg-surface-2 text-muted-foreground"
+                      }`}>
+                        {c.status}
+                      </span>
+                      {c.assignee && (
+                        <span className="truncate text-[10px] text-muted-foreground">
+                          {c.assignee.name}
+                        </span>
+                      )}
+                      <span className="ml-auto text-[10px] text-muted-foreground">
+                        {c.last_message ? formatTime(c.last_message.created_at) : ""}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
 
-        <button
-          onClick={() => onFilterChange("dashboard")}
-          className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-            activeFilter === "dashboard"
-              ? "bg-ink text-primary-foreground"
-              : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-          }`}
-        >
-          <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
-          <span>Dashboard</span>
-        </button>
-
-        <button
-          onClick={() => setTeamOpen(!teamOpen)}
-          className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-        >
-          <Users className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">Team</span>
-          {teamOpen ? (
-            <ChevronDown className="h-3 w-3" />
+        {/* Center — chat panel */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {loadingDetail ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !activeConvo ? (
+            <div className="flex flex-1 items-center justify-center">
+              <p className="text-sm text-muted-foreground">Select a conversation</p>
+            </div>
           ) : (
-            <ChevronRight className="h-3 w-3" />
-          )}
-        </button>
+            <>
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-foreground">
+                    {getInitials(activeConvo.customer_name || activeConvo.customer_email)}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-ink">
+                        {activeConvo.customer_name || activeConvo.customer_email || "Unknown"}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">via {activeConvo.channel}</span>
+                    </div>
+                    {activeConvo.customer_email && (
+                      <span className="text-xs text-muted-foreground">{activeConvo.customer_email}</span>
+                    )}
+                  </div>
+                </div>
 
-        {teamOpen && (
-          <div className="mt-1 space-y-0.5 pl-6">
-            {role === "admin"
-              ? workspaceTeams.map((team) => (
-                  <div key={team.name}>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Status dropdown */}
+                  <div className="relative" ref={statusRef}>
                     <button
-                      onClick={() => onTeamChange(team.name)}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1 text-left text-[11px] transition-colors ${
-                        selectedTeam === team.name
-                          ? "bg-ink text-primary-foreground"
-                          : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                      }`}
+                      onClick={() => setStatusOpen(!statusOpen)}
+                      className="flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-ink hover:bg-surface-2 transition-colors"
                     >
-                      <span className="flex-1">{team.name}</span>
-                      <span className="text-[9px] text-muted-foreground">{team.members.length}</span>
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                        activeConvo.status === "open" ? "bg-green-500" :
+                        activeConvo.status === "pending" ? "bg-yellow-500" : "bg-surface-2"
+                      }`} />
+                      {activeConvo.status.charAt(0).toUpperCase() + activeConvo.status.slice(1)}
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
                     </button>
-                    {selectedTeam === team.name && (
-                      <div className="ml-3 border-l border-border pl-2 pt-0.5">
-                        {team.members.map((m) => (
-                          <div
-                            key={m.name}
-                            className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                    {statusOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-50 w-32 rounded-lg border border-border bg-card py-1 shadow-lg">
+                        {["open", "pending", "closed"].map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => { handleStatusChange(s); setStatusOpen(false); }}
+                            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                              activeConvo.status === s ? "bg-surface-2 font-medium text-ink" : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
+                            }`}
                           >
-                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-surface-2 text-[7px] font-medium text-ink">
-                              {m.initials}
-                            </span>
-                            <span className="truncate">{m.name}</span>
-                          </div>
+                            <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                              s === "open" ? "bg-green-500" :
+                              s === "pending" ? "bg-yellow-500" : "bg-surface-2"
+                            }`} />
+                            {s.charAt(0).toUpperCase() + s.slice(1)}
+                          </button>
                         ))}
                       </div>
                     )}
                   </div>
-                ))
-              : currentTeam && (
-                  <div>
-                    <div className="rounded-md px-2 py-1 text-[11px] font-medium text-ink">
-                      {currentTeam.name}
-                    </div>
-                    <div className="ml-3 border-l border-border pl-2 pt-0.5">
-                      {currentTeam.members.map((m) => (
-                        <div
-                          key={m.name}
-                          className="flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                        >
-                          <span className="flex h-4 w-4 items-center justify-center rounded-full bg-surface-2 text-[7px] font-medium text-ink">
-                            {m.initials}
-                          </span>
-                          <span className="truncate">{m.name}</span>
+
+                  {/* Priority dropdown */}
+                  <div className="relative" ref={priorityRef}>
+                    <button
+                      onClick={() => setPriorityOpen(!priorityOpen)}
+                      className="flex h-7 items-center gap-1 rounded-md border border-border bg-surface px-2 text-xs font-medium text-ink hover:bg-surface-2 transition-colors"
+                    >
+                      <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                        activeConvo.priority === "urgent" ? "bg-red-500" :
+                        activeConvo.priority === "high" ? "bg-orange-500" :
+                        activeConvo.priority === "normal" ? "bg-blue-500" : "bg-surface-2"
+                      }`} />
+                      {activeConvo.priority === "urgent" ? "Urgent" : activeConvo.priority.charAt(0).toUpperCase() + activeConvo.priority.slice(1)}
+                      <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                    </button>
+                    {priorityOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-50 w-32 rounded-lg border border-border bg-card py-1 shadow-lg">
+                        {["urgent", "high", "normal", "low"].map((p) => (
+                          <button
+                            key={p}
+                            onClick={() => { handlePriorityChange(p); setPriorityOpen(false); }}
+                            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                              activeConvo.priority === p ? "bg-surface-2 font-medium text-ink" : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
+                            }`}
+                          >
+                            <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                              p === "urgent" ? "bg-red-500" :
+                              p === "high" ? "bg-orange-500" :
+                              p === "normal" ? "bg-blue-500" : "bg-surface-2"
+                            }`} />
+                            {p === "urgent" ? "Urgent" : p.charAt(0).toUpperCase() + p.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mx-1.5 h-5 w-px bg-border" />
+
+                  {/* Call, Email, More actions */}
+                  <div className="flex items-center gap-0.5">
+                    <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="Call">
+                      <Phone className="h-3.5 w-3.5" />
+                    </button>
+                    <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="Email">
+                      <Mail className="h-3.5 w-3.5" />
+                    </button>
+                    {/* More menu */}
+                    <div className="relative" ref={moreRef}>
+                      <button
+                        onClick={() => { setMoreOpen(!moreOpen); setAssignSubOpen(false); }}
+                        className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                          moreOpen ? "bg-surface-2 text-ink" : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
+                        }`}
+                        title="More"
+                      >
+                        <MoreHorizontal className="h-3.5 w-3.5" />
+                      </button>
+                      {moreOpen && (
+                        <div className="absolute right-0 top-full mt-1 z-50 w-40 rounded-lg border border-border bg-card py-1 shadow-lg">
+                          {/* Assign */}
+                          <div className="relative">
+                            <button
+                              onClick={() => setAssignSubOpen(!assignSubOpen)}
+                              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors"
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                              Assign
+                              <ChevronRight className="ml-auto h-3 w-3" />
+                            </button>
+                            {assignSubOpen && (
+                              <div className="absolute left-full top-0 ml-1 w-40 rounded-lg border border-border bg-card py-1 shadow-lg">
+                                <button
+                                  onClick={() => { handleAssign(undefined); setMoreOpen(false); setAssignSubOpen(false); }}
+                                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                                    !activeConvo?.assignee ? "bg-surface-2 font-medium text-ink" : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
+                                  }`}
+                                >
+                                  <UserCheck className="h-3.5 w-3.5" />
+                                  Myself
+                                </button>
+                                <div className="mx-2 my-1 border-t border-border" />
+                                {agents.map((a) => (
+                                  <button
+                                    key={a.id}
+                                    onClick={() => { handleAssign(a.id); setMoreOpen(false); setAssignSubOpen(false); }}
+                                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                                      activeConvo?.assignee?.id === a.id ? "bg-surface-2 font-medium text-ink" : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
+                                    }`}
+                                  >
+                                    <div className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[7px] font-medium text-accent-foreground">
+                                      {(a.name || a.email).charAt(0).toUpperCase()}
+                                    </div>
+                                    {a.name || a.email}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mx-2 my-1 border-t border-border" />
+
+                          <button className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors">
+                            <Archive className="h-3.5 w-3.5" />
+                            Archive
+                          </button>
+                          <button className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors">
+                            <Star className="h-3.5 w-3.5" />
+                            Star
+                          </button>
+                          <div className="mx-2 my-1 border-t border-border" />
+                          <button className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left text-red-500 hover:bg-red-50 transition-colors">
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </button>
                         </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mx-1.5 h-5 w-px bg-border" />
+
+                  {/* Auto-translate toggle */}
+                  <button
+                    onClick={() => {
+                      const next = !autoTranslate;
+                      setAutoTranslate(next);
+                      if (next) {
+                        const langName = customerLang?.name || "detected language";
+                        setTranslateToast({ show: true, lang: langName });
+                        setTimeout(() => setTranslateToast((t) => ({ ...t, show: false })), 3000);
+                      }
+                    }}
+                    className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
+                      autoTranslate
+                        ? "bg-accent/15 text-accent"
+                        : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
+                    }`}
+                    title="Auto-translate"
+                  >
+                    <Languages className="h-3.5 w-3.5" />
+                    {customerLang && (
+                      <span className="text-[10px] uppercase font-semibold">{customerLang.code}</span>
+                    )}
+                    {autoTranslate && customerLang && (
+                      <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 whitespace-nowrap">
+                        {customerLang.code.toUpperCase()}→EN
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto px-4 py-4">
+                {messages.length === 0 ? (
+                  <p className="text-center text-sm text-muted-foreground py-12">No messages yet</p>
+                ) : (
+                  <>
+                    {activeConvo && (
+                      <div className="relative flex items-center py-2">
+                        <div className="flex-1 border-t border-border" />
+                        <span className="mx-3 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
+                          Start {new Date(activeConvo.created_at).toLocaleDateString("en-US", { day: "numeric", month: "short" })}
+                        </span>
+                        <div className="flex-1 border-t border-border" />
+                      </div>
+                    )}
+                    {messages.reduce<{ msg: typeof messages[number]; first: boolean; last: boolean; isFinal: boolean }[]>((acc, msg, i) => {
+                      const prev = messages[i - 1];
+                      const next = messages[i + 1];
+                      const samePrev = prev && prev.is_from_customer === msg.is_from_customer && (!prev.sender_name || prev.sender_name === msg.sender_name);
+                      const sameNext = next && next.is_from_customer === msg.is_from_customer && (!next.sender_name || next.sender_name === msg.sender_name);
+                      acc.push({ msg, first: !samePrev, last: !sameNext, isFinal: i === messages.length - 1 });
+                      return acc;
+                    }, []).map(({ msg, first, last, isFinal }) => (
+                      <div key={msg.id} className={`flex items-end gap-2 ${msg.is_from_customer ? "" : "justify-end"} ${first ? "mt-4" : "mt-0.5"}`}>
+                        {/* Customer avatar — only on last message of group */}
+                        {msg.is_from_customer ? (
+                          <div className={`shrink-0 ${last ? "" : "invisible"}`}>
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-accent text-[9px] font-medium text-accent-foreground">
+                              {getInitials(activeConvo?.customer_name || activeConvo?.customer_email || "?")}
+                            </div>
+                          </div>
+                        ) : <div className="w-7" />}
+
+                        <div className={`max-w-[70%] flex flex-col ${msg.is_from_customer ? "" : "items-end"}`}>
+                          {/* Sender name — only on first message of agent group */}
+                          {!msg.is_from_customer && first && msg.sender_name && (
+                            <p className="text-[10px] font-medium text-muted-foreground mb-1 ml-1">{msg.sender_name}</p>
+                          )}
+                          <div
+                            className={`w-fit px-3.5 py-2 ${
+                              msg.is_from_customer
+                                ? "bg-surface text-ink"
+                                : msg.type === "note"
+                                ? "bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-md"
+                                : "bg-card text-ink border border-border shadow-sm"
+                            } ${
+                              msg.is_from_customer
+                                ? first && last ? "rounded-2xl" : first ? "rounded-t-2xl rounded-br-2xl rounded-bl-md" : last ? "rounded-b-2xl rounded-tr-2xl rounded-tl-md" : "rounded-r-2xl rounded-bl-md rounded-tl-md"
+                                : msg.type !== "note" && (first && last ? "rounded-2xl" : first ? "rounded-t-2xl rounded-bl-2xl rounded-br-md" : last ? "rounded-b-2xl rounded-tr-md rounded-tl-2xl" : "rounded-l-2xl rounded-br-md rounded-tr-md")
+                            }`}
+                          >
+                            <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
+                            <div className="flex items-center justify-end gap-1 mt-1">
+                              {msg.is_from_customer && msg.read_at && isFinal && (
+                                <span className="text-[9px] font-medium text-accent">Seen</span>
+                              )}
+                              <p className={`text-[10px] ${msg.is_from_customer ? "text-muted-foreground" : "opacity-50"}`}>
+                                {formatTime(msg.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Agent avatar — only on last message of group */}
+                        {!msg.is_from_customer ? (
+                          <div className={`shrink-0 ${last ? "" : "invisible"}`}>
+                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink/10 text-[9px] font-medium text-muted-foreground">
+                              {msg.sender_name ? getInitials(msg.sender_name) : "A"}
+                            </div>
+                          </div>
+                        ) : <div className="w-7" />}
+                      </div>
+                    ))}
+                  </>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Reply input */}
+              <div className="border-t border-border px-3 py-2.5">
+                {/* Mode toggle + action buttons */}
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5">
+                    <button
+                      onClick={() => setMsgType("reply")}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                        msgType === "reply" ? "bg-ink text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-ink"
+                      }`}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                      Reply
+                    </button>
+                    <button
+                      onClick={() => setMsgType("note")}
+                      className={`flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+                        msgType === "note" ? "bg-ink text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-ink"
+                      }`}
+                    >
+                      <StickyNote className="h-3.5 w-3.5" />
+                      Note
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-0.5">
+                    <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="Attach file">
+                      <Paperclip className="h-3.5 w-3.5" />
+                    </button>
+                    <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="AI assist">
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </button>
+                    <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="Emoji">
+                      <Smile className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className={`flex items-end gap-2 rounded-lg border bg-surface p-2.5 transition-colors ${
+                  msgType === "note" ? "border-yellow-300" : "border-border"
+                }`}>
+                  <textarea
+                    value={replyText}
+                    onChange={(e) => setReplyText(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={msgType === "reply" ? "Type your reply... (Enter to send, Shift+Enter for new line)" : "Write an internal note..."}
+                    rows={1}
+                    className="min-h-[38px] flex-1 resize-none bg-transparent text-sm text-ink outline-none placeholder:text-muted-foreground"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={!replyText.trim() || sending}
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition hover:opacity-90 disabled:opacity-30 ${
+                      msgType === "note" ? "bg-yellow-600 text-white" : "bg-ink text-primary-foreground"
+                    }`}
+                  >
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Right — Details | Copilot */}
+        {showDetails && activeConvo && (
+          <div className="hidden md:flex w-72 shrink-0 flex-col border-l border-border">
+            {/* Tabs */}
+            <div className="flex border-b border-border">
+              <button
+                onClick={() => setDetailTab("details")}
+                className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+                  detailTab === "details"
+                    ? "text-ink border-b-2 border-ink"
+                    : "text-muted-foreground hover:text-ink"
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Details
+              </button>
+              <button
+                onClick={() => setDetailTab("copilot")}
+                className={`flex flex-1 items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors ${
+                  detailTab === "copilot"
+                    ? "text-ink border-b-2 border-ink"
+                    : "text-muted-foreground hover:text-ink"
+                }`}
+              >
+                <Bot className="h-3.5 w-3.5" />
+                Copilot
+              </button>
+            </div>
+
+            {detailTab === "details" ? (
+              <DetailsContent activeConvo={activeConvo} formatTime={formatTime} />
+            ) : (
+              /* Copilot tab */
+              <div className="flex flex-1 flex-col">
+                <div className="flex-1 overflow-y-auto p-3">
+                  {copilotMessages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <Bot className="h-8 w-8 text-muted-foreground/40 mb-2" />
+                      <p className="text-xs text-muted-foreground">Ask me anything about this conversation</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {copilotMessages.map((m, i) => (
+                        <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                          <div className={`max-w-[85%] rounded-lg px-3 py-2 text-xs ${
+                            m.role === "user"
+                              ? "bg-ink text-primary-foreground"
+                              : "bg-surface border border-border text-ink"
+                          }`}>
+                            <p className="whitespace-pre-wrap leading-relaxed">{m.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                      {copilotLoading && (
+                        <div className="flex justify-start">
+                          <div className="rounded-lg bg-surface border border-border px-3 py-2">
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40" style={{ animationDelay: "0ms" }} />
+                              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40" style={{ animationDelay: "150ms" }} />
+                              <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/40" style={{ animationDelay: "300ms" }} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div ref={copilotEndRef} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick suggestions */}
+                {copilotMessages.length === 0 && (
+                  <div className="px-3 pb-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {copilotSuggestions.map((s) => (
+                        <button
+                          key={s.key}
+                          onClick={() => handleCopilotSend(s.key)}
+                          className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors"
+                        >
+                          {s.label}
+                        </button>
                       ))}
                     </div>
                   </div>
                 )}
+
+                {/* Copilot input */}
+                <div className="border-t border-border p-2">
+                  <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5">
+                    <input
+                      value={copilotInput}
+                      onChange={(e) => setCopilotInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCopilotSend(); } }}
+                      placeholder="Ask Copilot..."
+                      className="flex-1 bg-transparent text-xs text-ink outline-none placeholder:text-muted-foreground"
+                    />
+                    <button
+                      onClick={() => handleCopilotSend()}
+                      disabled={!copilotInput.trim() || copilotLoading}
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-ink disabled:opacity-30 transition-colors"
+                    >
+                      <Send className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -301,532 +836,273 @@ function SectionSidebar({
   );
 }
 
-const statusFilters = ["Open", "Waiting", "Closed"] as const;
-const sortOptions = ["Newest", "Oldest", "Urgent"] as const;
+function DetailsContent({ activeConvo, formatTime }: { activeConvo: ConversationDetail; formatTime: (iso: string) => string }) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    conversation: true,
+    contact: true,
+    notes: false,
+    timeline: true,
+    device: false,
+    past: false,
+  });
+  const [pastConvos, setPastConvos] = useState<Conversation[]>([]);
+  const [pastLoading, setPastLoading] = useState(false);
 
-function ConversationList({
-  activeFilter,
-  conversations: convos,
-  activeId,
-  onSelect,
-}: {
-  activeFilter: FilterKey;
-  conversations: any[];
-  activeId: number;
-  onSelect: (c: any) => void;
-}) {
-  const [statusFilter, setStatusFilter] = useState<string>("Open");
-  const [sortBy, setSortBy] = useState<string>("Newest");
+  useEffect(() => {
+    if (activeConvo.customer_email && openGroups.past) {
+      setPastLoading(true);
+      fetchPastConversations(activeConvo.customer_email, activeConvo.id)
+        .then(setPastConvos)
+        .catch(() => setPastConvos([]))
+        .finally(() => setPastLoading(false));
+    }
+  }, [activeConvo.id, activeConvo.customer_email, openGroups.past]);
 
-  return (
-    <div className="flex w-full md:w-72 shrink-0 flex-col border-r border-border">
-      <div className="px-3 py-2.5">
-        <h2 className="text-xs font-semibold text-ink">{sectionTitles[activeFilter]}</h2>
-      </div>
+  const toggle = (key: string) => setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
 
-      <div className="border-t border-border" />
+  const getInitials = (name: string) =>
+    name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2) || "?";
 
-      <div className="flex items-center gap-2 px-3 pt-2 pb-1.5">
-        <div className="relative">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="appearance-none rounded-md border border-border bg-surface pl-2 pr-5 py-1 text-[10px] text-ink outline-none cursor-pointer"
-          >
-            {statusFilters.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
+  const priorityDot = (p: string) => {
+    if (p === "urgent") return "bg-red-500";
+    if (p === "high") return "bg-orange-500";
+    if (p === "normal") return "bg-blue-500";
+    return "bg-surface-2";
+  };
 
-        <div className="relative">
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="appearance-none rounded-md border border-border bg-surface pl-2 pr-5 py-1 text-[10px] text-ink outline-none cursor-pointer"
-          >
-            {sortOptions.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
-      </div>
-
-      <div className="border-t border-border" />
-
-      <div className="px-3 py-2">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search..."
-            className="w-full rounded-md border border-border bg-surface py-1.5 pl-8 pr-3 text-xs text-ink outline-none placeholder:text-muted-foreground focus:border-ink"
-          />
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {convos.map((c) => {
-          const statusStyles: Record<string, string> = {
-            urgent: "bg-red-100 text-red-700",
-            open: "bg-accent/20 text-accent-foreground",
-            pending: "bg-amber-100 text-amber-700",
-            closed: "bg-surface-2 text-muted-foreground",
-          };
-          return (
-            <button
-              key={c.id}
-              onClick={() => onSelect(c)}
-              className={`flex w-full gap-2.5 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-surface ${
-                activeId === c.id ? "bg-surface" : ""
-              }`}
-            >
-              <div className="relative mt-0.5 h-8 w-8 shrink-0">
-                <div
-                  className={`flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-medium text-white ${c.color}`}
-                >
-                  {c.avatar}
-                </div>
-                <StatusDot online={c.online} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs font-semibold text-ink">{c.name}</span>
-                  <span className={`shrink-0 rounded px-1 py-0.5 text-[9px] font-medium ${
-                    c.channel === "chat"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-surface-2 text-muted-foreground"
-                  }`}>
-                    {c.channel === "chat" ? "Chat" : "Email"}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{c.preview}</p>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className={`rounded px-1 py-0.5 text-[9px] font-medium ${statusStyles[c.status] || statusStyles.open}`}>
-                    {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">{c.time}</span>
-                </div>
-              </div>
-              {c.unread && <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />}
-            </button>
-          );
-        })}
-      </div>
-    </div>
+  const label = (text: string) => (
+    <p className="text-[11px] font-medium text-muted-foreground/60">{text}</p>
   );
-}
 
-function ChatPanel({
-  conversation,
-  messages: msgs,
-}: {
-  conversation: any;
-  messages: typeof messageData;
-}) {
-  const [mode, setMode] = useState<"reply" | "note">("reply");
-
-  if (!conversation) return null;
+  const notes = activeConvo.messages?.filter((m) => m.type === "note") || [];
+  const hasBrowser = Object.keys(activeConvo.browser || {}).length > 0;
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-        <div className="flex items-center gap-2.5">
-          <div
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-medium text-white ${conversation?.color}`}
-          >
-            {conversation?.avatar}
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs font-semibold text-ink">{conversation?.name}</span>
-              <span className="text-[10px] text-muted-foreground">via {conversation?.channel}</span>
-            </div>
-            <span className="text-[10px] text-muted-foreground">{conversation?.email}</span>
-          </div>
+    <div className="flex-1 overflow-y-auto">
+      {/* Identity card */}
+      <div className="flex flex-col items-center border-b border-border px-3 py-5">
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent text-sm font-medium text-accent-foreground">
+          {getInitials(activeConvo.customer_name || activeConvo.customer_email)}
         </div>
-        <div className="flex items-center gap-1.5">
-          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-            <Phone className="h-3.5 w-3.5" />
-          </button>
-          <button className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-            <Mail className="h-3.5 w-3.5" />
-          </button>
-          <div className="h-4 w-px bg-border" />
-          <div className="relative">
-            <select
-              value={conversation?.assignee || ""}
-              onChange={() => {}}
-              className="appearance-none rounded-md border border-border bg-surface pl-2 pr-5 py-1 text-[10px] text-ink outline-none cursor-pointer"
-            >
-              <option value="" disabled>Assign</option>
-              {workspaceTeams.flatMap((t) => t.members).map((m) => (
-                <option key={m.name} value={m.initials}>{m.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-muted-foreground" />
-          </div>
-          <div className="relative">
-            <select
-              value={conversation?.status}
-              onChange={() => {}}
-              className="appearance-none rounded-md border border-border bg-surface pl-2 pr-5 py-1 text-[10px] text-ink outline-none cursor-pointer"
-            >
-              <option value="open">Open</option>
-              <option value="pending">Pending</option>
-              <option value="closed">Closed</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-muted-foreground" />
-          </div>
-        </div>
+        <h4 className="mt-2.5 text-sm font-semibold text-ink">
+          {activeConvo.customer_name || "Unknown"}
+        </h4>
+        {activeConvo.customer_email && (
+          <p className="text-xs text-muted-foreground">{activeConvo.customer_email}</p>
+        )}
+        {activeConvo.location && (
+          <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Globe className="h-3 w-3" />
+            {activeConvo.location}
+          </p>
+        )}
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
-        {msgs.map((m) => (
-          <div
-            key={m.id}
-            className={`flex ${m.from === "agent" && !m.isInternal ? "justify-end" : ""}`}
+      {/* Accordion groups */}
+      <div className="divide-y divide-border">
+        {/* Conversation */}
+        <div>
+          <button
+            onClick={() => toggle("conversation")}
+            className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
           >
-            <div
-              className={`max-w-[75%] rounded-lg px-3 py-2 ${
-                m.isInternal
-                  ? "rounded-bl-sm border border-dashed border-amber-300 bg-amber-50/50"
-                  : m.from === "agent"
-                    ? "bg-ink text-primary-foreground"
-                    : "bg-surface"
-              }`}
-            >
-              {m.isInternal && (
-                <div className="mb-1 flex items-center gap-1 text-[9px] font-medium text-amber-600">
-                  <span className="rounded bg-amber-200 px-1 py-0.5 text-[8px] uppercase">Internal</span>
-                  Note from {m.name}
+            <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.conversation ? "rotate-90" : ""}`} />
+            <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            Conversation
+          </button>
+          {openGroups.conversation && (
+            <div className="px-3 pb-3 space-y-2">
+              <div className="flex items-center justify-between">
+                {label("Status")}
+                <span className="flex items-center gap-1.5 text-xs font-medium text-ink">
+                  <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    activeConvo.status === "open" ? "bg-green-500" :
+                    activeConvo.status === "pending" ? "bg-yellow-500" : "bg-surface-2"
+                  }`} />
+                  {activeConvo.status.charAt(0).toUpperCase() + activeConvo.status.slice(1)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                {label("Priority")}
+                <span className="flex items-center gap-1.5 text-xs font-medium text-ink">
+                  <span className={`inline-block h-1.5 w-1.5 rounded-full ${priorityDot(activeConvo.priority)}`} />
+                  {activeConvo.priority.charAt(0).toUpperCase() + activeConvo.priority.slice(1)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                {label("Channel")}
+                <span className="text-xs font-medium text-ink capitalize">{activeConvo.channel}</span>
+              </div>
+              {activeConvo.subject && (
+                <div className="flex items-center justify-between">
+                  {label("Subject")}
+                  <span className="text-xs font-medium text-ink text-right max-w-[60%] truncate">{activeConvo.subject}</span>
                 </div>
               )}
-              <p className="text-xs leading-relaxed">{m.text}</p>
-              <div
-                className={`mt-0.5 flex items-center justify-end gap-1 text-[9px] ${
-                  m.isInternal
-                    ? "text-amber-500"
-                    : m.from === "agent"
-                      ? "text-primary-foreground/60"
-                      : "text-muted-foreground"
-                }`}
-              >
-                {m.from === "agent" && !m.isInternal && m.seen && (
-                  <span className="font-medium">Seen</span>
-                )}
-                <span>{m.time}</span>
+              <div className="flex items-center justify-between">
+                {label("Messages")}
+                <span className="text-xs font-medium text-ink">{activeConvo.message_count}</span>
               </div>
+              {activeConvo.assignee && (
+                <div className="flex items-center justify-between">
+                  {label("Assignee")}
+                  <span className="text-xs font-medium text-ink">{activeConvo.assignee.name || activeConvo.assignee.email}</span>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
 
-      <div className="px-2 pb-2">
-        <div className="flex items-center gap-1 pl-2">
+        {/* Contact */}
+        <div>
           <button
-            onClick={() => setMode("reply")}
-            className={`flex items-center gap-1 rounded-t-md px-2.5 py-1 text-[10px] font-medium transition-colors ${
-              mode === "reply"
-                ? "border border-border border-b-0 bg-surface text-ink"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            onClick={() => toggle("contact")}
+            className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
           >
-            <MessageSquare className="h-3 w-3" />
-            Reply
+            <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.contact ? "rotate-90" : ""}`} />
+            <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+            Contact
           </button>
+          {openGroups.contact && (
+            <div className="px-3 pb-3 space-y-2">
+              <div className="flex items-center justify-between">
+                {label("Email")}
+                <span className="text-xs font-medium text-ink truncate max-w-[65%]">{activeConvo.customer_email || "—"}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                {label("Phone")}
+                <span className="text-xs text-muted-foreground">Not provided</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div>
           <button
-            onClick={() => setMode("note")}
-            className={`flex items-center gap-1 rounded-t-md px-2.5 py-1 text-[10px] font-medium transition-colors ${
-              mode === "note"
-                ? "border border-amber-300 border-b-0 bg-amber-50/50 text-amber-800"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            onClick={() => toggle("notes")}
+            className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
           >
-            <PenLine className="h-3 w-3" />
-            Note
+            <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.notes ? "rotate-90" : ""}`} />
+            <StickyNote className="h-3.5 w-3.5 text-muted-foreground" />
+            Notes
+            {notes.length > 0 && (
+              <span className="ml-auto rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">{notes.length}</span>
+            )}
           </button>
-        </div>
-        <div className={`flex flex-col rounded-lg border ${
-          mode === "note"
-            ? "border-dashed border-amber-300 bg-amber-50/50"
-            : "border-border bg-surface"
-        }`}>
-          <div className="flex flex-col gap-1.5 p-2.5">
-            <textarea
-              placeholder={mode === "reply" ? "Type your message..." : "Write an internal note..."}
-              rows={2}
-              className="min-h-[32px] resize-none bg-transparent px-2 py-1 text-xs text-ink outline-none placeholder:text-muted-foreground"
-            />
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-0.5">
-                <button className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-                  <Sparkles className="h-3.5 w-3.5" />
-                </button>
-                <button className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-                  <Paperclip className="h-3.5 w-3.5" />
-                </button>
-                <button className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-                  <Smile className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <button className="flex items-center gap-1 rounded-md bg-ink px-3 py-1.5 text-[10px] font-medium text-primary-foreground transition-colors hover:bg-ink/90">
-                <Send className="h-3.5 w-3.5" />
-                Send
-              </button>
+          {openGroups.notes && (
+            <div className="px-3 pb-3 space-y-2">
+              {notes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No notes yet</p>
+              ) : (
+                notes.map((n) => (
+                  <div key={n.id} className="rounded-lg border border-yellow-200 bg-yellow-50 p-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-medium text-yellow-700">{n.sender_name || "Agent"}</span>
+                      <span className="text-[10px] text-yellow-500">{formatTime(n.created_at)}</span>
+                    </div>
+                    <p className="text-[11px] text-yellow-800 whitespace-pre-wrap leading-relaxed">{n.body}</p>
+                  </div>
+                ))
+              )}
             </div>
-          </div>
+          )}
         </div>
-      </div>
-    </div>
-  );
-}
 
-function CollapsibleSection({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-b border-border">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {open ? (
-          <ChevronDown className="h-3 w-3" />
-        ) : (
-          <ChevronRight className="h-3 w-3" />
-        )}
-        {title}
-      </button>
-      {open && <div className="px-3 pb-2">{children}</div>}
-    </div>
-  );
-}
-
-function UserDetailsPanel({ conversation }: { conversation: any }) {
-  const [tab, setTab] = useState<"details" | "copilot">("details");
-
-  if (!conversation) return null;
-
-  return (
-    <div className="flex w-full md:w-60 shrink-0 flex-col border-l border-border">
-      <div className="flex border-b border-border">
-        <button
-          onClick={() => setTab("details")}
-          className={`flex-1 py-2 text-center text-[10px] font-semibold transition-colors ${
-            tab === "details"
-              ? "border-b-2 border-ink text-ink"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Details
-        </button>
-        <button
-          onClick={() => setTab("copilot")}
-          className={`flex-1 py-2 text-center text-[10px] font-semibold transition-colors ${
-            tab === "copilot"
-              ? "border-b-2 border-ink text-ink"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          Copilot
-        </button>
-      </div>
-
-      {tab === "copilot" ? (
-        <div className="flex flex-1 flex-col">
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            <div className="rounded-lg bg-surface p-2.5">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Bot className="h-3 w-3 text-accent-foreground" />
-                <span className="text-[9px] font-semibold text-accent-foreground">Copilot</span>
+        {/* Timeline */}
+        <div>
+          <button
+            onClick={() => toggle("timeline")}
+            className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
+          >
+            <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.timeline ? "rotate-90" : ""}`} />
+            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+            Timeline
+          </button>
+          {openGroups.timeline && (
+            <div className="px-3 pb-3 space-y-2">
+              <div className="flex items-center justify-between">
+                {label("Created")}
+                <span className="text-xs font-medium text-ink">
+                  {new Date(activeConvo.created_at).toLocaleDateString("en-US", {
+                    month: "short", day: "numeric", year: "numeric",
+                  })}
+                </span>
               </div>
-              <p className="text-[10px] leading-relaxed text-ink">Hi! I can help you analyze this conversation. What would you like to know?</p>
-            </div>
-
-            {[
-              { q: "Summarize this conversation", delay: "1m ago" },
-              { q: "Find related conversations", delay: "45s ago" },
-            ].map((item) => (
-              <button
-                key={item.q}
-                className="w-full rounded-lg border border-border bg-card p-2 text-left text-[10px] text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
-              >
-                {item.q}
-              </button>
-            ))}
-
-            <div className="rounded-lg bg-ink p-2.5">
-              <p className="text-[10px] leading-relaxed text-primary-foreground">
-                Customer is hitting API rate limits on the Growth plan. Agent offered a temporary increase to 5000 req/hr and suggested upgrading to Enterprise. Key concerns: production deployment stability, cost of upgrade.
-              </p>
-              <div className="mt-1 flex items-center justify-end gap-1 text-[8px] text-primary-foreground/60">
-                <CheckCheck className="h-2.5 w-2.5" />
-                <span>Just now</span>
+              <div className="flex items-center justify-between">
+                {label("Last activity")}
+                <span className="text-xs font-medium text-ink">{formatTime(activeConvo.last_message_at || activeConvo.created_at)}</span>
               </div>
             </div>
-          </div>
-
-          <div className="border-t border-border p-2">
-            <div className="flex items-center gap-1.5 rounded-md border border-border bg-surface px-2 py-1.5">
-              <input
-                type="text"
-                placeholder="Ask Copilot..."
-                className="min-w-0 flex-1 bg-transparent text-[10px] text-ink outline-none placeholder:text-muted-foreground"
-              />
-              <button className="rounded-md bg-ink p-1 text-primary-foreground">
-                <Send className="h-3 w-3" />
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-      ) : (
-        <div className="flex-1 overflow-y-auto">
-          <div className="flex flex-col items-center border-b border-border px-3 py-4">
-            <div
-              className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-medium text-white ${conversation.color}`}
+
+        {/* Device */}
+        {hasBrowser && (
+          <div>
+            <button
+              onClick={() => toggle("device")}
+              className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
             >
-              {conversation.avatar}
-            </div>
-            <h4 className="mt-2 text-xs font-semibold text-ink">{conversation.name}</h4>
-            <p className="text-[10px] text-muted-foreground">{conversation.email}</p>
-            <div className="mt-2 flex gap-1">
-              <span className="rounded-full bg-accent/20 px-2 py-0.5 text-[9px] font-medium text-accent-foreground">
-                Customer
-              </span>
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[9px] font-medium text-muted-foreground">
-                VIP
-              </span>
-            </div>
-          </div>
-
-          <div className="border-b border-border px-3 py-2">
-            <h5 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Details</h5>
-            <div className="mt-1.5 space-y-1.5">
-              <div className="flex items-center gap-2 text-[10px]">
-                <span className="text-muted-foreground">Assignee</span>
-                <span className="flex items-center gap-1 ml-auto text-ink">
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-ink text-[7px] font-medium text-primary-foreground">
-                    JD
-                  </span>
-                  Jordan Diaz
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-[10px]">
-                <span className="text-muted-foreground">Team</span>
-                <span className="ml-auto text-ink">Support</span>
-              </div>
-            </div>
-          </div>
-
-          <CollapsibleSection title="Links">
-            <div className="space-y-1">
-              {["Tracker Tickets", "Back-Office tickets", "Side Conversations"].map((link) => (
-                <div key={link} className="flex items-center justify-between rounded-md px-2 py-1 text-[10px] text-muted-foreground hover:bg-surface-2">
-                  <span>{link}</span>
-                  <button className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground">
-                    <Plus className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Conversation Attributes">
-            <div className="space-y-1">
-              {[
-                { label: "Id", value: "#1423" },
-                { label: "Brand", value: "Connect" },
-                { label: "Subject", value: "API Rate Limit" },
-                { label: "Language", value: "English" },
-                { label: "Topic", value: "Technical" },
-                { label: "Priority", value: "High" },
-                { label: "Product Area", value: "API" },
-                { label: "Tag Id", value: "TAG-042" },
-              ].map((attr) => (
-                <div key={attr.label} className="flex items-center justify-between text-[10px]">
-                  <span className="text-muted-foreground">{attr.label}</span>
-                  <span className="text-ink">{attr.value}</span>
-                </div>
-              ))}
-              <button className="mt-1 text-[9px] font-medium text-accent-foreground hover:underline">See All</button>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="Company Details">
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-muted-foreground">Name</span>
-                <span className="text-ink">Acme Corp</span>
-              </div>
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-muted-foreground">Plan</span>
-                <span className="text-ink">Growth</span>
-              </div>
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="text-muted-foreground">Role</span>
-                <span className="text-ink">Engineering Lead</span>
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="User Notes">
-            <div className="space-y-1.5">
-              {[
-                { note: "Prefers email communication", agent: "Jordan D.", date: "2d ago" },
-                { note: "Asked about enterprise plan in previous chat", agent: "Alex L.", date: "1w ago" },
-              ].map((n, i) => (
-                <div key={i} className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 p-2">
-                  <p className="text-[10px] text-amber-800">{n.note}</p>
-                  <div className="mt-1 flex items-center justify-between text-[8px] text-amber-500">
-                    <span>{n.agent}</span>
-                    <span>{n.date}</span>
+              <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.device ? "rotate-90" : ""}`} />
+              <Monitor className="h-3.5 w-3.5 text-muted-foreground" />
+              Device
+            </button>
+            {openGroups.device && (
+              <div className="px-3 pb-3 space-y-2">
+                {Object.entries(activeConvo.browser).map(([key, val]) => (
+                  <div key={key} className="flex items-center justify-between">
+                    {label(key.charAt(0).toUpperCase() + key.slice(1))}
+                    <span className="text-xs font-medium text-ink truncate max-w-[60%]">{String(val)}</span>
                   </div>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-          <CollapsibleSection title="Recent Conversations">
-            <div className="space-y-1">
-              {[
-                { topic: "Billing inquiry", date: "1 week ago", status: "Resolved" },
-                { topic: "Widget customization", date: "2 weeks ago", status: "Resolved" },
-              ].map((c) => (
-                <div key={c.topic} className="rounded-md bg-surface p-2">
-                  <div className="text-[10px] font-medium text-ink">{c.topic}</div>
-                  <div className="mt-0.5 flex items-center justify-between text-[8px] text-muted-foreground">
-                    <span>{c.date}</span>
-                    <span className="rounded bg-surface-2 px-1 py-0.5">{c.status}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CollapsibleSection>
-
-          <CollapsibleSection title="User Tags">
-            <div className="flex flex-wrap gap-1">
-              {["api", "rate-limiting", "priority", "enterprise"].map((t) => (
-                <span
-                  key={t}
-                  className="rounded border border-border bg-surface px-1.5 py-0.5 text-[9px] text-muted-foreground"
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-          </CollapsibleSection>
-        </div>
-      )}
+        {/* Past Conversations */}
+        {activeConvo.customer_email && (
+          <div>
+            <button
+              onClick={() => toggle("past")}
+              className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
+            >
+              <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.past ? "rotate-90" : ""}`} />
+              <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
+              Past conversations
+            </button>
+            {openGroups.past && (
+              <div className="px-3 pb-3 space-y-1.5">
+                {pastLoading ? (
+                  <p className="text-xs text-muted-foreground">Loading...</p>
+                ) : pastConvos.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No past conversations</p>
+                ) : (
+                  pastConvos.map((pc) => (
+                    <div key={pc.id} className="flex items-center justify-between rounded-md border border-border bg-surface px-2.5 py-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium text-ink">{pc.subject || pc.customer_name || "Conversation"}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className={`inline-block h-1.5 w-1.5 rounded-full ${
+                            pc.status === "open" ? "bg-green-500" :
+                            pc.status === "pending" ? "bg-yellow-500" : "bg-surface-2"
+                          }`} />
+                          <span className="text-[10px] text-muted-foreground capitalize">{pc.status}</span>
+                          {pc.last_message && (
+                            <span className="text-[10px] text-muted-foreground">{formatTime(pc.last_message.created_at)}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-muted-foreground capitalize">{pc.channel}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

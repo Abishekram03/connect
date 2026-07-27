@@ -67,9 +67,9 @@ function CollapsibleGroup({
     <div className="border-b border-border">
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+        className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
       >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
         {title}
       </button>
       {open && <div className="space-y-2 px-3 pb-3">{children}</div>}
@@ -87,20 +87,20 @@ function ColorField({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className="flex items-center justify-between gap-2.5">
+      <span className="text-sm text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1.5">
         <input
           type="color"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-5 w-5 cursor-pointer rounded border border-border p-0"
+          className="h-6 w-6 cursor-pointer rounded border border-border p-0"
         />
         <input
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-[10px] text-ink outline-none"
+          className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-xs text-ink outline-none"
         />
       </div>
     </div>
@@ -119,13 +119,13 @@ function SelectField({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className="flex items-center justify-between gap-2.5">
+      <span className="text-sm text-muted-foreground">{label}</span>
       <div className="relative">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="appearance-none rounded border border-border bg-surface pl-2 pr-5 py-0.5 text-xs text-ink outline-none cursor-pointer"
+          className="appearance-none rounded border border-border bg-surface pl-2 pr-5 py-0.5 text-sm text-ink outline-none cursor-pointer"
         >
           {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
@@ -147,8 +147,8 @@ function ToggleField({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
+    <div className="flex items-center justify-between gap-2.5">
+      <span className="text-sm text-muted-foreground">{label}</span>
       <button
         onClick={() => onChange(!value)}
         className={`relative h-4 w-7 rounded-full transition-colors ${
@@ -156,7 +156,7 @@ function ToggleField({
         }`}
       >
         <div
-          className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${
+          className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
             value ? "translate-x-3.5" : "translate-x-0.5"
           }`}
         />
@@ -181,18 +181,18 @@ function NumberField({
   onChange: (v: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1">
+    <div className="flex items-center justify-between gap-2.5">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1.5">
         <input
           type="number"
           value={value}
           min={min}
           max={max}
           onChange={(e) => onChange(Number(e.target.value))}
-          className="w-12 rounded border border-border bg-surface px-1 py-0.5 text-xs text-ink outline-none text-right"
+          className="w-12 rounded border border-border bg-surface px-1 py-0.5 text-sm text-ink outline-none text-right"
         />
-        {suffix && <span className="text-[10px] text-muted-foreground">{suffix}</span>}
+        {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
       </div>
     </div>
   );
@@ -209,12 +209,12 @@ function TextField({
 }) {
   return (
     <div>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-0.5 w-full rounded border border-border bg-surface px-2 py-1 text-xs text-ink outline-none focus:border-ink"
+        className="mt-1 w-full rounded border border-border bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-ink"
       />
     </div>
   );
@@ -244,10 +244,10 @@ export default function WidgetPage() {
   }, [sendConfigToIframe, iframeReady]);
 
   return (
-    <div className="flex h-full gap-1.5 p-0 md:pl-3 md:pt-3">
-      <div className="flex flex-1 flex-col rounded-none md:rounded-tl-lg bg-card shadow-sm overflow-y-auto">
+    <div className="flex h-full gap-1.5 md:pl-3">
+      <div className="flex flex-1 flex-col bg-card shadow-sm overflow-y-auto">
         <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-          <h2 className="text-xs font-semibold text-ink">Widget</h2>
+          <h2 className="text-sm font-semibold text-ink">Widget</h2>
         </div>
 
         <CollapsibleGroup title="Launcher" defaultOpen>
@@ -297,18 +297,18 @@ export default function WidgetPage() {
 
       <div className="relative flex flex-1 flex-col overflow-hidden rounded-tr-lg bg-card shadow-sm">
         <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-          <h3 className="text-xs font-semibold text-ink">Preview</h3>
+          <h3 className="text-sm font-semibold text-ink">Preview</h3>
           <button
             onClick={() => setShowPreview(!showPreview)}
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
           >
-            {showPreview ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+            {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
             {showPreview ? "Hide Widget" : "Show Widget"}
           </button>
         </div>
         <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#f8f9fa]">
           {!showPreview && (
-            <span className="text-xs text-muted-foreground">Widget hidden</span>
+            <span className="text-sm text-muted-foreground">Widget hidden</span>
           )}
           <iframe
             ref={iframeRef}
