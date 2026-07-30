@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Loader2, Check, X } from "lucide-react";
 import { signin as apiSignin } from "@/lib/auth-service";
@@ -17,7 +17,7 @@ interface InvitationInfo {
   user_is_active: boolean;
 }
 
-export default function InvitePage() {
+function InvitePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const token = searchParams?.get("token");
@@ -250,5 +250,17 @@ export default function InvitePage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function InvitePage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    }>
+      <InvitePageContent />
+    </Suspense>
   );
 }
