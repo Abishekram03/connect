@@ -1,25 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Save,
   Building2,
   Palette,
-  MessageSquare,
   Bell,
   CreditCard,
   Check,
   Upload,
   User,
+  Loader2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { api } from "@/lib/api-client";
 
-type Tab = "account" | "general" | "branding" | "widget" | "notifications" | "billing";
+type Tab = "account" | "general" | "branding" | "notifications" | "billing";
 
 export default function SettingsPage() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("general");
-  const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [accountName, setAccountName] = useState(user?.name || "");
   const [oldPassword, setOldPassword] = useState("");
@@ -28,26 +29,20 @@ export default function SettingsPage() {
   const [passwordMsg, setPasswordMsg] = useState("");
 
   const [workspace, setWorkspace] = useState({
-    name: user?.organization?.name || "",
-    slug: user?.organization?.slug || "",
-    timezone: user?.organization?.timezone || "UTC",
+    name: "",
+    slug: "",
+    timezone: "UTC",
   });
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
+  const [workspaceMsg, setWorkspaceMsg] = useState("");
 
   const [branding, setBranding] = useState({
     primaryColor: "#2563eb",
     companyName: "Connect",
     logoUrl: "",
   });
-
-  const [widget, setWidget] = useState({
-    position: "bottom-right" as "bottom-right" | "bottom-left",
-    borderRadius: 16,
-    autoGreet: true,
-    autoGreetDelay: 3,
-    collectEmail: true,
-    showBranding: true,
-    helpCenterEnabled: true,
-  });
+  const [brandingSaving, setBrandingSaving] = useState(false);
+  const [brandingMsg, setBrandingMsg] = useState("");
 
   const [notifications, setNotifications] = useState({
     emailNotifications: true,
@@ -56,42 +51,151 @@ export default function SettingsPage() {
     weeklyDigest: false,
     mentionAlert: true,
   });
+  const [notifSaving, setNotifSaving] = useState(false);
+  const [notifMsg, setNotifMsg] = useState("");
 
-  const save = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    setAccountName(user?.name || "");
+    setWorkspace({
+      name: user?.organization?.name || "",
+      slug: user?.organization?.slug || "",
+      timezone: user?.organization?.timezone || "UTC",
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    Promise.all([
+      api.get<any>("/api/workspace/branding").catch(() => null),
+      api.get<any>("/api/workspace/notifications").catch(() => null),
+    ]).then(([b, n]) => {
+      if (b) {
+        setBranding({
+          primaryColor: b.primary_color || "#2563eb",
+          companyName: b.company_name || "Connect",
+          logoUrl: b.logo_url || "",
+        });
+      }
+      if (n) {
+        setNotifications({
+          emailNotifications: n.email_notifications ?? true,
+          newConversationAlert: n.new_conversation_alert ?? true,
+          messageFromVisitor: n.message_from_visitor ?? true,
+          weeklyDigest: n.weekly_digest ?? false,
+          mentionAlert: n.mention_alert ?? true,
+        });
+      }
+      setLoading(false);
+    });
+  }, [user]);
+
+  const saveWorkspace = async () => {
+    setWorkspaceSaving(true);
+    setWorkspaceMsg("");
+    try {
+      await api.patch("/api/workspace", {
+        name: workspace.name,
+        slug: workspace.slug,
+        timezone: workspace.timezone,
+      });
+      setWorkspaceMsg("Saved");
+      setTimeout(() => setWorkspaceMsg(""), 2000);
+    } catch {
+      setWorkspaceMsg("Failed to save");
+    } finally {
+      setWorkspaceSaving(false);
+    }
+  };
+
+  const saveBranding = async () => {
+    setBrandingSaving(true);
+    setBrandingMsg("");
+    try {
+      await api.patch("/api/workspace/branding", {
+        primary_color: branding.primaryColor,
+        company_name: branding.companyName,
+        logo_url: branding.logoUrl,
+      });
+      setBrandingMsg("Saved");
+      setTimeout(() => setBrandingMsg(""), 2000);
+    } catch {
+      setBrandingMsg("Failed to save");
+    } finally {
+      setBrandingSaving(false);
+    }
+  };
+
+  const saveNotifications = async () => {
+    setNotifSaving(true);
+    setNotifMsg("");
+    try {
+      await api.patch("/api/workspace/notifications", {
+        email_notifications: notifications.emailNotifications,
+        new_conversation_alert: notifications.newConversationAlert,
+        message_from_visitor: notifications.messageFromVisitor,
+        weekly_digest: notifications.weeklyDigest,
+        mention_alert: notifications.mentionAlert,
+      });
+      setNotifMsg("Saved");
+      setTimeout(() => setNotifMsg(""), 2000);
+    } catch {
+      setNotifMsg("Failed to save");
+    } finally {
+      setNotifSaving(false);
+    }
   };
 
   const tabs: { key: Tab; label: string; icon: typeof Building2 }[] = [
     { key: "account", label: "Account", icon: User },
     { key: "general", label: "General", icon: Building2 },
     { key: "branding", label: "Branding", icon: Palette },
-    { key: "widget", label: "Widget", icon: MessageSquare },
     { key: "notifications", label: "Notifications", icon: Bell },
     { key: "billing", label: "Billing", icon: CreditCard },
   ];
+
+  const SaveButton = ({
+    saving,
+    msg,
+    onClick,
+  }: {
+    saving: boolean;
+    msg: string;
+    onClick: () => void;
+  }) => (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={onClick}
+        disabled={saving}
+        className="flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+      >
+        {saving ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Save className="h-4 w-4" />
+        )}
+        {saving ? "Saving..." : "Save"}
+      </button>
+      {msg && (
+        <span className="flex items-center gap-1 text-xs text-emerald-600">
+          <Check className="h-3.5 w-3.5" /> {msg}
+        </span>
+      )}
+    </div>
+  );
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center md:pl-3">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col md:pl-3">
       <div className="flex flex-1 flex-col overflow-hidden bg-card shadow-sm">
         <div className="flex items-center justify-between border-b border-border px-5 py-3">
           <h1 className="text-base font-semibold text-ink">Settings</h1>
-          <button
-            onClick={save}
-            className="flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground hover:opacity-90"
-          >
-            {saved ? (
-              <>
-                <Check className="h-4 w-4" />
-                Saved
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4" />
-                Save Changes
-              </>
-            )}
-          </button>
         </div>
 
         <div className="flex flex-1 gap-0 overflow-hidden">
@@ -206,9 +310,12 @@ export default function SettingsPage() {
 
             {tab === "general" && (
               <div className="p-6 space-y-6">
-                <div>
-                  <h2 className="text-base font-semibold text-ink">Workspace</h2>
-                  <p className="text-xs text-muted-foreground mt-1">Manage your workspace settings</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-ink">Workspace</h2>
+                    <p className="text-xs text-muted-foreground mt-1">Manage your workspace settings</p>
+                  </div>
+                  <SaveButton saving={workspaceSaving} msg={workspaceMsg} onClick={saveWorkspace} />
                 </div>
 
                 <div className="space-y-5">
@@ -253,9 +360,12 @@ export default function SettingsPage() {
 
             {tab === "branding" && (
               <div className="p-6 space-y-6">
-                <div>
-                  <h2 className="text-base font-semibold text-ink">Branding</h2>
-                  <p className="text-xs text-muted-foreground mt-1">Customize your brand appearance</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-ink">Branding</h2>
+                    <p className="text-xs text-muted-foreground mt-1">Customize your brand appearance</p>
+                  </div>
+                  <SaveButton saving={brandingSaving} msg={brandingMsg} onClick={saveBranding} />
                 </div>
 
                 <div className="space-y-5">
@@ -325,90 +435,14 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {tab === "widget" && (
-              <div className="p-6 space-y-6">
-                <div>
-                  <h2 className="text-base font-semibold text-ink">Chat Widget</h2>
-                  <p className="text-xs text-muted-foreground mt-1">Configure the widget behavior</p>
-                </div>
-
-                <div className="space-y-5">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Position</label>
-                    <div className="mt-1 flex gap-2">
-                      <button
-                        onClick={() => setWidget({ ...widget, position: "bottom-right" })}
-                        className={`rounded-md border px-4 py-2 text-sm transition-colors ${
-                          widget.position === "bottom-right"
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        Bottom Right
-                      </button>
-                      <button
-                        onClick={() => setWidget({ ...widget, position: "bottom-left" })}
-                        className={`rounded-md border px-4 py-2 text-sm transition-colors ${
-                          widget.position === "bottom-left"
-                            ? "border-accent bg-accent/10 text-accent"
-                            : "border-border text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        Bottom Left
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Border Radius ({widget.borderRadius}px)</label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={24}
-                      value={widget.borderRadius}
-                      onChange={(e) => setWidget({ ...widget, borderRadius: Number(e.target.value) })}
-                      className="mt-1 w-full max-w-xs"
-                    />
-                  </div>
-                  <div className="space-y-3">
-                    {([
-                      { key: "autoGreet", label: "Auto Greet Visitors" },
-                      { key: "collectEmail", label: "Collect Email" },
-                      { key: "showBranding", label: "Show Branding" },
-                      { key: "helpCenterEnabled", label: "Enable Help Center" },
-                    ] as const).map(({ key, label }) => (
-                      <label key={key} className="flex items-center gap-2.5 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={widget[key]}
-                          onChange={() => setWidget({ ...widget, [key]: !widget[key] })}
-                          className="h-4 w-4 rounded border-border text-accent"
-                        />
-                        <span className="text-sm text-ink">{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  {widget.autoGreet && (
-                    <div>
-                      <label className="text-xs font-medium text-muted-foreground">Auto Greet Delay ({widget.autoGreetDelay}s)</label>
-                      <input
-                        type="range"
-                        min={1}
-                        max={15}
-                        value={widget.autoGreetDelay}
-                        onChange={(e) => setWidget({ ...widget, autoGreetDelay: Number(e.target.value) })}
-                        className="mt-1 w-full max-w-xs"
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {tab === "notifications" && (
               <div className="p-6 space-y-6">
-                <div>
-                  <h2 className="text-base font-semibold text-ink">Notifications</h2>
-                  <p className="text-xs text-muted-foreground mt-1">Manage how you receive alerts</p>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-ink">Notifications</h2>
+                    <p className="text-xs text-muted-foreground mt-1">Manage how you receive alerts</p>
+                  </div>
+                  <SaveButton saving={notifSaving} msg={notifMsg} onClick={saveNotifications} />
                 </div>
 
                 <div className="space-y-3">

@@ -1,10 +1,20 @@
 from datetime import timedelta
 from django.utils import timezone
 from django.db.models import Count, Avg, Q, F
-from rest_framework import permissions
+from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from .models import Conversation, Message
+
+
+def get_user_org(user):
+    if hasattr(user, "organization") and user.organization:
+        return user.organization
+    from teams.models import Membership
+    membership = Membership.objects.filter(user=user, status="active").first()
+    if membership:
+        return membership.organization
+    return None
 
 
 def get_date_range(period, org_created):
@@ -23,7 +33,10 @@ def get_date_range(period, org_created):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def summary(request):
-    org = request.user.organization
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
     period = request.query_params.get("period", "7d")
     start, end = get_date_range(period, org.created_at)
 
@@ -33,14 +46,15 @@ def summary(request):
     open_count = convos.filter(status="open").count()
     pending = convos.filter(status="pending").count()
 
-    # Active agents
+    from teams.models import Membership
     from django.contrib.auth import get_user_model
-    User = get_user_model()
-    active_agents = User.objects.filter(
-        organization=org, status="active", role__in=["admin", "agent"]
-    ).count()
 
-    # Avg response time: time between customer msg and next agent msg
+    User = get_user_model()
+    active_agent_ids = Membership.objects.filter(
+        organization=org, status="active", role__in=["owner", "admin", "agent"]
+    ).values_list("user_id", flat=True)
+    active_agents = len(active_agent_ids)
+
     convos_with_msgs = convos.filter(messages__isnull=False).distinct()
     total_response = 0
     response_count = 0
@@ -56,7 +70,6 @@ def summary(request):
     avg_response_secs = total_response / response_count if response_count else 0
     avg_response_min = round(avg_response_secs / 60, 1)
 
-    # Avg conversation duration (first to last message)
     total_duration = 0
     duration_count = 0
     for c in convos_with_msgs:
@@ -69,7 +82,6 @@ def summary(request):
     avg_duration_secs = total_duration / duration_count if duration_count else 0
     avg_duration_min = round(avg_duration_secs / 60, 1)
 
-    # Weekly/daily trend (last 7 days)
     trend_days = []
     for i in range(6, -1, -1):
         day = (timezone.now() - timedelta(days=i)).date()
@@ -95,10 +107,7 @@ def summary(request):
             "avgTime": round(compute_avg_response_for_range(day_start, day_end, org), 1),
         })
 
-    # Per-agent stats
-    agents_list = User.objects.filter(
-        organization=org, status="active", role__in=["admin", "agent"]
-    )
+    agents_list = User.objects.filter(id__in=active_agent_ids)
     agent_stats = []
     for agent in agents_list:
         agent_convos = convos.filter(assignee=agent)
@@ -110,7 +119,6 @@ def summary(request):
             created_at__gte=start,
             type="reply",
         )
-        # Average response time for this agent
         resp_total = 0
         resp_count = 0
         for c in agent_convos.filter(messages__isnull=False).distinct():

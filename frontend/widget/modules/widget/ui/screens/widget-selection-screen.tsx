@@ -3,14 +3,14 @@
 import { useState } from "react";
 import { Button } from "@connect/ui/components/button";
 import { Icon } from "@iconify/react";
-import { ListChecks, X } from "lucide-react";
+import { ListChecks, X, Inbox } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
-  conversationIdAtom,
   organizationIdAtom,
   screenAtom,
   widgetConfigAtom,
   isAiConversationAtom,
+  contactEmailAtomFamily,
 } from "../../atoms/widget-atoms";
 
 interface Props {
@@ -23,17 +23,16 @@ export const WidgetSelectionScreen = ({
   onClose,
 }: Props = {}) => {
   const setScreen = useSetAtom(screenAtom);
-  const setConversationId = useSetAtom(conversationIdAtom);
   const setIsAiConversation = useSetAtom(isAiConversationAtom);
   const widgetConfig = useAtomValue(widgetConfigAtom);
   const organizationId = useAtomValue(organizationIdAtom);
+  const storedEmail = useAtomValue(contactEmailAtomFamily(organizationId || ""));
   const [isPending, setIsPending] = useState<"chat" | null>(null);
 
   const faqs: { id: string; question: string; answer: string }[] = [];
 
   const handleStartChat = () => {
     setIsPending("chat");
-    setConversationId(`conv-${Date.now()}`);
     setIsAiConversation(true);
     setScreen("chat");
     setIsPending(null);
@@ -99,6 +98,32 @@ export const WidgetSelectionScreen = ({
             style={{ color: widgetConfig.primaryColor }}
           />
         </Button>
+
+        {storedEmail && (
+          <Button
+            className="mb-4 h-[86px] w-full justify-between rounded-2xl border border-neutral-200 bg-white/90 px-4 text-left shadow-[0_2px_8px_rgb(0_0_0_/_0.08)]"
+            variant="outline"
+            onClick={() => setScreen("inbox")}
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-100 text-neutral-600">
+                <Inbox className="h-5 w-5" />
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-[15px] font-semibold text-neutral-800">
+                  My Messages
+                </span>
+                <span className="truncate text-[13px] text-neutral-500">
+                  View your past conversations
+                </span>
+              </div>
+            </div>
+            <Icon
+              icon="solar:arrow-right-bold"
+              className="h-[18px] w-[18px] flex-shrink-0 text-neutral-400"
+            />
+          </Button>
+        )}
 
         {widgetConfig.showFaqsOnHome && (
           <div className="mb-4 rounded-xl border border-neutral-200 bg-white/90 p-3 shadow-[0_2px_10px_rgb(0_0_0_/_0.06)]">

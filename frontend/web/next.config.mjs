@@ -10,11 +10,36 @@ const nextConfig = {
         source: "/api/:path*",
         destination: "http://127.0.0.1:8000/api/:path*",
       },
+      {
+        source: "/widget",
+        destination: "http://127.0.0.1:3001",
+      },
+      {
+        source: "/widget/:path*",
+        destination: "http://127.0.0.1:3001/:path*",
+      },
+      {
+        source: "/_next/:path*",
+        destination: "http://127.0.0.1:3001/_next/:path*",
+      },
     ];
   },
-  // Security headers for the dashboard
   async headers() {
     return [
+      {
+        source: "/widget",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-XSS-Protection", value: "1; mode=block" },
+        ],
+      },
+      {
+        source: "/widget/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-XSS-Protection", value: "1; mode=block" },
+        ],
+      },
       {
         source: "/(.*)",
         headers: [

@@ -10,6 +10,16 @@ from .serializers import (
 )
 
 
+def get_user_org(user):
+    if hasattr(user, "organization") and user.organization:
+        return user.organization
+    from teams.models import Membership
+    membership = Membership.objects.filter(user=user, status="active").first()
+    if membership:
+        return membership.organization
+    return None
+
+
 def get_or_create_workspace_models(organization):
     Branding.objects.get_or_create(organization=organization)
     WidgetConfig.objects.get_or_create(organization=organization)
@@ -19,7 +29,7 @@ def get_or_create_workspace_models(organization):
 @api_view(["GET", "PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def workspace(request):
-    organization = request.user.organization
+    organization = get_user_org(request.user)
     if not organization:
         return Response({"detail": "No organization found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -37,7 +47,7 @@ def workspace(request):
 @api_view(["GET", "PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def branding(request):
-    organization = request.user.organization
+    organization = get_user_org(request.user)
     if not organization:
         return Response({"detail": "No organization found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -55,7 +65,7 @@ def branding(request):
 @api_view(["GET", "PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def widget_config(request):
-    organization = request.user.organization
+    organization = get_user_org(request.user)
     if not organization:
         return Response({"detail": "No organization found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -73,7 +83,7 @@ def widget_config(request):
 @api_view(["GET", "PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def notifications(request):
-    organization = request.user.organization
+    organization = get_user_org(request.user)
     if not organization:
         return Response({"detail": "No organization found"}, status=status.HTTP_404_NOT_FOUND)
 

@@ -43,22 +43,17 @@ export function useWidgetSession(
       setError(null);
 
       try {
-        const result = {
-      sessionToken: null,
-      sessionId: null,
-          expiresAt: Date.now() + 24 * 60 * 60 * 1000,
-        };
-
+        const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
         const stored: StoredSession = {
-          sessionToken: result.sessionToken,
+          sessionToken: "",
           organizationId,
-          expiresAt: result.expiresAt,
+          expiresAt,
           createdAt: Date.now(),
         };
 
         storeSession(stored);
-        setSessionToken(result.sessionToken);
-        setSessionId(result.sessionId);
+        setSessionToken(stored.sessionToken);
+        setSessionId(stored.sessionToken);
         setIsLoading(false);
       } catch (err) {
         setError(

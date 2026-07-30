@@ -1,5 +1,6 @@
 import uuid
 from django.utils import timezone
+from django.contrib.auth import get_user_model
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -12,13 +13,27 @@ from .serializers import (
     MessageSerializer,
 )
 
+User = get_user_model()
+
+
+def get_user_org(user):
+    if hasattr(user, "organization") and user.organization:
+        return user.organization
+    from teams.models import Membership
+    membership = Membership.objects.filter(user=user, status="active").first()
+    if membership:
+        return membership.organization
+    return None
+
 
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def list_conversations(request):
-    conversations = Conversation.objects.filter(
-        organization=request.user.organization
-    ).select_related("assignee")
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    conversations = Conversation.objects.filter(organization=org).select_related("assignee")
 
     status_filter = request.query_params.get("status")
     if status_filter and status_filter in ("open", "pending", "closed"):
@@ -53,10 +68,12 @@ def list_conversations(request):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def get_conversation(request, pk):
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        conversation = Conversation.objects.get(
-            pk=pk, organization=request.user.organization
-        )
+        conversation = Conversation.objects.get(pk=pk, organization=org)
     except Conversation.DoesNotExist:
         return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -67,10 +84,12 @@ def get_conversation(request, pk):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def create_message(request, pk):
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        conversation = Conversation.objects.get(
-            pk=pk, organization=request.user.organization
-        )
+        conversation = Conversation.objects.get(pk=pk, organization=org)
     except Conversation.DoesNotExist:
         return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -94,10 +113,12 @@ def create_message(request, pk):
 @api_view(["PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def update_conversation(request, pk):
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        conversation = Conversation.objects.get(
-            pk=pk, organization=request.user.organization
-        )
+        conversation = Conversation.objects.get(pk=pk, organization=org)
     except Conversation.DoesNotExist:
         return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -114,19 +135,19 @@ def update_conversation(request, pk):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def assign_conversation(request, pk):
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
-        conversation = Conversation.objects.get(
-            pk=pk, organization=request.user.organization
-        )
+        conversation = Conversation.objects.get(pk=pk, organization=org)
     except Conversation.DoesNotExist:
         return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
 
     assignee_id = request.data.get("assignee_id")
     if assignee_id:
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
         try:
-            assignee = User.objects.get(pk=assignee_id, organization=request.user.organization)
+            assignee = User.objects.get(pk=assignee_id, memberships__organization=org, memberships__status="active")
             conversation.assignee = assignee
         except User.DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -140,12 +161,17 @@ def assign_conversation(request, pk):
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
 def list_agents(request):
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    agents = User.objects.filter(
-        organization=request.user.organization,
-        status="active",
-        role__in=["admin", "agent"],
-    )
+    from teams.models import Membership
+
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    agent_user_ids = Membership.objects.filter(
+        organization=org, status="active", role__in=["owner", "admin", "agent"]
+    ).values_list("user_id", flat=True)
+
+    agents = User.objects.filter(id__in=agent_user_ids)
     from accounts.serializers import UserSerializer
+
     return Response(UserSerializer(agents, many=True).data)

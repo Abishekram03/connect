@@ -157,8 +157,16 @@ def complete_signup(request):
                 role="admin",
                 status="active",
             )
+
+            from teams.models import Membership
+
+            Membership.objects.create(
+                user=user,
+                organization=organization,
+                role="owner",
+                status="active",
+            )
     except Exception:
-        # Fallback: create user without org so they don't lose their account
         user = UserModel.objects.create_user(
             email=email,
             password=data["password"],
@@ -311,6 +319,15 @@ def setup_workspace(request):
             user.role = "admin"
             user.status = "active"
             user.save(update_fields=["organization", "role", "status"])
+
+            from teams.models import Membership
+
+            Membership.objects.create(
+                user=user,
+                organization=organization,
+                role="owner",
+                status="active",
+            )
     except Exception:
         return Response(
             {"detail": "Failed to create workspace. Please try again."},

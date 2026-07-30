@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   X,
   Search,
-  Mail,
   Check,
   Shield,
   UserPlus,
@@ -13,118 +12,174 @@ import {
   MoreHorizontal,
   Trash2,
   Clock,
-  MessageSquare,
-  CheckCheck,
-  Timer,
-  BarChart3,
-  UserCheck,
+  RefreshCw,
+  Loader2,
+  Mail,
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  teamsApi,
+  type Membership,
+  type Team,
+  type TeamDetail,
+  type Invitation,
+} from "@/lib/teams-service";
 
 type Tab = "teams" | "members";
 
-type TeamRule = "admin-approval" | "domain-restrict" | "max-members";
-
-interface Team {
-  id: string;
-  name: string;
-  description: string;
-  rules: TeamRule[];
-  memberIds: string[];
-  createdAt: string;
-}
-
-interface Member {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "agent";
-  status: "invited" | "active";
-  invitedAt: string;
-}
-
-const RULE_LABELS: Record<TeamRule, string> = {
-  "admin-approval": "Requires admin approval",
-  "domain-restrict": "Restrict to @company.com",
-  "max-members": "Max 10 members",
-};
-
-const defaultTeams: Team[] = [];
-const defaultMembers: Member[] = [];
-
 export default function TeamsPage() {
-  const [tab, setTab] = useState<Tab>("teams");
-  const [teams, setTeams] = useState<Team[]>(defaultTeams);
-  const [members, setMembers] = useState<Member[]>(defaultMembers);
+  const { user } = useAuth();
+  const [tab, setTab] = useState<Tab>("members");
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [members, setMembers] = useState<Membership[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [search, setSearch] = useState("");
-  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
+  const [selectedTeam, setSelectedTeam] = useState<TeamDetail | null>(null);
+  const [selectedMember, setSelectedMember] = useState<Membership | null>(null);
   const [showCreateTeam, setShowCreateTeam] = useState(false);
   const [showInviteMember, setShowInviteMember] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
-  const [newTeam, setNewTeam] = useState({ name: "", description: "", rules: [] as TeamRule[] });
+  const [newTeam, setNewTeam] = useState({ name: "", description: "" });
   const [inviteEmail, setInviteEmail] = useState("");
-  const [teamNameError, setTeamNameError] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "agent">("agent");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const filteredTeams = teams.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()));
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [teamsData, membersData, invitationsData] = await Promise.all([
+        teamsApi.listTeams(),
+        teamsApi.listMembers(),
+        teamsApi.listInvitations(),
+      ]);
+      setTeams(teamsData);
+      setMembers(membersData);
+      setInvitations(invitationsData);
+    } catch (e: any) {
+      setError(e.message || "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const filteredTeams = teams.filter((t) =>
+    t.name.toLowerCase().includes(search.toLowerCase())
+  );
   const filteredMembers = members.filter(
-    (m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase())
+    (m) =>
+      m.user.name.toLowerCase().includes(search.toLowerCase()) ||
+      m.user.email.toLowerCase().includes(search.toLowerCase())
   );
 
-  const createTeam = () => {
-    if (!newTeam.name.trim()) {
-      setTeamNameError("Team name is required");
-      return;
+  const handleCreateTeam = async () => {
+    if (!newTeam.name.trim()) return;
+    try {
+      const team = await teamsApi.createTeam(newTeam);
+      const { members: _, ...teamWithoutMembers } = team;
+      setTeams([...teams, teamWithoutMembers]);
+      setNewTeam({ name: "", description: "" });
+      setShowCreateTeam(false);
+      setSelectedTeam(team);
+    } catch (e: any) {
+      setError(e.message);
     }
-    const team: Team = {
-      id: `t${Date.now()}`,
-      name: newTeam.name,
-      description: newTeam.description,
-      rules: newTeam.rules,
-      memberIds: [],
-      createdAt: new Date().toISOString().split("T")[0],
-    };
-    setTeams([...teams, team]);
-    setNewTeam({ name: "", description: "", rules: [] });
-    setShowCreateTeam(false);
-    setTeamNameError("");
   };
 
-  const deleteTeam = (id: string) => {
-    setTeams(teams.filter((t) => t.id !== id));
-    if (selectedTeam?.id === id) setSelectedTeam(null);
+  const handleDeleteTeam = async (id: string) => {
+    try {
+      await teamsApi.deleteTeam(id);
+      setTeams(teams.filter((t) => t.id !== id));
+      if (selectedTeam?.id === id) setSelectedTeam(null);
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
-  const inviteMember = () => {
+  const handleInviteMember = async () => {
     if (!inviteEmail.trim() || !inviteEmail.includes("@")) return;
-    const member: Member = {
-      id: `m${Date.now()}`,
-      name: inviteEmail.split("@")[0],
-      email: inviteEmail,
-      role: "agent",
-      status: "invited",
-      invitedAt: new Date().toISOString().split("T")[0],
-    };
-    setMembers([...members, member]);
-    setInviteEmail("");
-    setShowInviteMember(false);
+    try {
+      const invitation = await teamsApi.inviteMember({
+        email: inviteEmail,
+        role: inviteRole,
+      });
+      setInvitations([...invitations, invitation]);
+      setInviteEmail("");
+      setInviteRole("agent");
+      setShowInviteMember(false);
+      loadData();
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
-  const addMembersToTeam = (teamId: string, memberIds: string[]) => {
-    setTeams(teams.map((t) => (t.id === teamId ? { ...t, memberIds: [...new Set([...t.memberIds, ...memberIds])] } : t)));
-    setShowAddMembers(false);
+  const handleRemoveMember = async (id: string) => {
+    try {
+      await teamsApi.removeMember(id);
+      setMembers(members.filter((m) => m.id !== id));
+      if (selectedMember?.id === id) setSelectedMember(null);
+      loadData();
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
-  const removeMemberFromTeam = (teamId: string, memberId: string) => {
-    setTeams(teams.map((t) => (t.id === teamId ? { ...t, memberIds: t.memberIds.filter((m) => m !== memberId) } : t)));
+  const handleAddMembersToTeam = async () => {
+    if (!selectedTeam || selectedMemberIds.length === 0) return;
+    try {
+      await teamsApi.addTeamMembers(selectedTeam.id, selectedMemberIds);
+      const updated = await teamsApi.getTeam(selectedTeam.id);
+      setSelectedTeam(updated);
+      const { members: _, ...updatedBase } = updated;
+      setTeams(teams.map((t) => (t.id === updatedBase.id ? updatedBase : t)));
+      setShowAddMembers(false);
+      setSelectedMemberIds([]);
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
 
-  const toggleRule = (rule: TeamRule) => {
-    setNewTeam((prev) => ({
-      ...prev,
-      rules: prev.rules.includes(rule) ? prev.rules.filter((r) => r !== rule) : [...prev.rules, rule],
-    }));
+  const handleRemoveTeamMember = async (teamId: string, userId: string) => {
+    try {
+      await teamsApi.removeTeamMember(teamId, userId);
+      const updated = await teamsApi.getTeam(teamId);
+      setSelectedTeam(updated);
+      const { members: _, ...updatedBase } = updated;
+      setTeams(teams.map((t) => (t.id === updatedBase.id ? updatedBase : t)));
+    } catch (e: any) {
+      setError(e.message);
+    }
   };
+
+  const handleCancelInvitation = async (id: string) => {
+    try {
+      await teamsApi.cancelInvitation(id);
+      setInvitations(invitations.filter((i) => i.id !== id));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  const handleResendInvitation = async (id: string) => {
+    try {
+      await teamsApi.resendInvitation(id);
+    } catch (e: any) {
+      setError(e.message);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col md:pl-3">
@@ -135,15 +190,19 @@ export default function TeamsPage() {
             <button
               onClick={() => setTab("teams")}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                tab === "teams" ? "bg-ink text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                tab === "teams"
+                  ? "bg-ink text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              Team
+              Teams
             </button>
             <button
               onClick={() => setTab("members")}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                tab === "members" ? "bg-ink text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                tab === "members"
+                  ? "bg-ink text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Members
@@ -151,377 +210,432 @@ export default function TeamsPage() {
           </div>
         </div>
 
-        <div className="flex flex-1 gap-0 overflow-hidden">
-        <div className="flex w-full md:w-72 flex-col border-r border-border">
-          <div className="flex items-center gap-2.5 border-b border-border px-4 py-2.5">
-            <div className="relative flex-1">
-              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder={tab === "teams" ? "Search teams..." : "Search members..."}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-md border border-border bg-surface py-2 pl-6 pr-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
-              />
-            </div>
+        {error && (
+          <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+            {error}
             <button
-              onClick={() => (tab === "teams" ? setShowCreateTeam(true) : setShowInviteMember(true))}
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+              onClick={() => setError("")}
+              className="ml-2 text-red-400 hover:text-red-600"
             >
-              <Plus className="h-4 w-4" />
+              <X className="inline h-3.5 w-3.5" />
             </button>
           </div>
+        )}
 
-          <div className="flex-1 overflow-y-auto p-3">
-            {tab === "teams" ? (
-              filteredTeams.length === 0 ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">No teams yet</p>
-              ) : (
-                filteredTeams.map((team) => (
-                  <button
-                    key={team.id}
-                    onClick={() => setSelectedTeam(team)}
-                    className={`w-full rounded-lg px-4 py-2.5 text-left transition-colors ${
-                      selectedTeam?.id === team.id ? "bg-surface-2" : "hover:bg-surface-2"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-ink">{team.name}</p>
-                      <div className="flex items-center gap-1.5">
-                        <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">{team.memberIds.length}</span>
-                      </div>
-                    </div>
-                    {team.description && (
-                      <p className="mt-1 text-xs text-muted-foreground truncate">{team.description}</p>
-                    )}
-                    {team.rules.length > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {team.rules.map((rule) => (
-                          <span key={rule} className="inline-flex items-center gap-0.5 rounded bg-accent/10 px-1.5 py-0.5 text-[11px] text-accent">
-                            <Shield className="h-3.5 w-3.5" />
-                            {RULE_LABELS[rule]}
+        <div className="flex flex-1 gap-0 overflow-hidden">
+          <div className="flex w-full md:w-72 flex-col border-r border-border">
+            <div className="flex items-center gap-2.5 border-b border-border px-4 py-2.5">
+              <div className="relative flex-1">
+                <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder={
+                    tab === "teams" ? "Search teams..." : "Search members..."
+                  }
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full rounded-md border border-border bg-surface py-2 pl-6 pr-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <button
+                onClick={() =>
+                  tab === "teams"
+                    ? setShowCreateTeam(true)
+                    : setShowInviteMember(true)
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted-foreground hover:text-foreground"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3">
+              {tab === "teams" ? (
+                filteredTeams.length === 0 ? (
+                  <p className="p-4 text-center text-sm text-muted-foreground">
+                    No teams yet
+                  </p>
+                ) : (
+                  filteredTeams.map((team) => (
+                    <button
+                      key={team.id}
+                      onClick={async () => {
+                        const detail = await teamsApi.getTeam(team.id);
+                        setSelectedTeam(detail);
+                      }}
+                      className={`w-full rounded-lg px-4 py-2.5 text-left transition-colors ${
+                        selectedTeam?.id === team.id
+                          ? "bg-surface-2"
+                          : "hover:bg-surface-2"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-ink">
+                          {team.name}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground">
+                            {team.member_count}
                           </span>
-                        ))}
+                        </div>
                       </div>
-                    )}
-                  </button>
-                ))
-              )
-            ) : (
-              filteredMembers.length === 0 ? (
-                <p className="p-4 text-center text-sm text-muted-foreground">No members yet</p>
-              ) : (
-                filteredMembers.map((member) => (
-                  <button
-                    key={member.id}
-                    onClick={() => setSelectedMember(member)}
-                    className={`w-full flex items-center gap-2.5 rounded-lg px-4 py-2.5 transition-colors ${
-                      selectedMember?.id === member.id ? "bg-surface-2" : "hover:bg-surface-2"
-                    }`}
-                  >
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
-                      {member.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-ink truncate">{member.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">{member.email}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      {member.status === "invited" ? (
-                        <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700">
-                          <Clock className="h-3.5 w-3.5" />
-                          Invited
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-700">
-                          <Check className="h-3.5 w-3.5" />
-                          Active
-                        </span>
+                      {team.description && (
+                        <p className="mt-1 text-xs text-muted-foreground truncate">
+                          {team.description}
+                        </p>
                       )}
-                      <button className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                        <MoreHorizontal className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </button>
-                ))
-              )
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {tab === "teams" && selectedTeam ? (
-            <div className="flex flex-1 flex-col overflow-y-auto p-5">
-              <div className="flex items-center justify-between mb-5">
-                <div>
-                  <h2 className="text-base font-semibold text-ink">{selectedTeam.name}</h2>
-                  <p className="text-sm text-muted-foreground">{selectedTeam.description}</p>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => setShowAddMembers(true)}
-                    className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-sm text-ink hover:bg-surface-2"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                    Add Members
-                  </button>
-                  <button
-                    onClick={() => deleteTeam(selectedTeam.id)}
-                    className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-red-500"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-5 grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <Users className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Members</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">{selectedTeam.memberIds.length}</p>
-                </div>
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Active Conversations</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">12</p>
-                </div>
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <CheckCheck className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Resolved This Week</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">48</p>
-                </div>
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <Timer className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Avg Response Time</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">2.4m</p>
-                </div>
-              </div>
-
-              {selectedTeam.rules.length > 0 && (
-                <div className="mb-5 rounded-lg border border-border bg-surface p-4">
-                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Rules</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedTeam.rules.map((rule) => (
-                      <span key={rule} className="inline-flex items-center gap-1.5 rounded bg-accent/10 px-3 py-1.5 text-xs text-accent">
-                        <Shield className="h-3.5 w-3.5" />
-                        {RULE_LABELS[rule]}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Members ({selectedTeam.memberIds.length})
+                    </button>
+                  ))
+                )
+              ) : filteredMembers.length === 0 && invitations.length === 0 ? (
+                <p className="p-4 text-center text-sm text-muted-foreground">
+                  No members yet
                 </p>
-                {selectedTeam.memberIds.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
-                    <Users className="mb-3 h-10 w-10 text-border" />
-                    <p>No members in this team</p>
+              ) : (
+                <>
+                  {filteredMembers.map((member) => {
+                    const isMe = user?.email === member.user.email;
+                    return (
+                    <button
+                      key={member.id}
+                      onClick={() => setSelectedMember(member)}
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-4 py-2.5 transition-colors ${
+                        selectedMember?.id === member.id
+                          ? "bg-surface-2"
+                          : "hover:bg-surface-2"
+                      }`}
+                    >
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
+                        {member.user.name?.charAt(0) ||
+                          member.user.email.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-ink truncate">
+                          {member.user.name || member.user.email}
+                          {isMe && (
+                            <span className="ml-1.5 inline-flex items-center rounded bg-ink px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">
+                              You
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {member.user.email}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {member.status === "invited" ? (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700">
+                            <Clock className="h-3.5 w-3.5" />
+                            Invited
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-700">
+                            <Check className="h-3.5 w-3.5" />
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                    );
+                  })}
+                  {invitations.length > 0 && (
+                    <>
+                      <div className="mx-4 my-2 border-t border-border" />
+                      <p className="px-4 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                        Pending Invitations
+                      </p>
+                      {invitations.map((inv) => (
+                        <div
+                          key={inv.id}
+                          className="flex items-center gap-2.5 rounded-lg px-4 py-2.5 hover:bg-surface-2"
+                        >
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-amber-100 text-xs font-medium text-amber-700">
+                            <Mail className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-ink truncate">
+                              {inv.email}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {inv.role} · expires {new Date(inv.expires_at).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={async () => {
+                                await teamsApi.resendInvitation(inv.id);
+                                loadData();
+                              }}
+                              className="rounded p-1 text-muted-foreground hover:text-foreground"
+                              title="Resend invitation"
+                            >
+                              <RefreshCw className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await teamsApi.cancelInvitation(inv.id);
+                                setInvitations(invitations.filter((i) => i.id !== inv.id));
+                              }}
+                              className="rounded p-1 text-muted-foreground hover:text-red-500"
+                              title="Cancel invitation"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {tab === "teams" && selectedTeam ? (
+              <div className="flex flex-1 flex-col overflow-y-auto p-5">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <h2 className="text-base font-semibold text-ink">
+                      {selectedTeam.name}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedTeam.description || "No description"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => setShowAddMembers(true)}
-                      className="mt-2 text-accent hover:underline"
+                      className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-2 text-sm text-ink hover:bg-surface-2"
                     >
-                      Add members
+                      <UserPlus className="h-3.5 w-3.5" />
+                      Add Members
+                    </button>
+                    <button
+                      onClick={() => handleDeleteTeam(selectedTeam.id)}
+                      className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-red-500"
+                    >
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
-                ) : (
-                  <div className="space-y-1">
-                    {selectedTeam.memberIds.map((mid) => {
-                      const member = members.find((m) => m.id === mid);
-                      if (!member) return null;
-                      return (
-                        <div key={mid} className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5">
+                </div>
+
+                <div className="mb-5">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Members ({selectedTeam.member_count})
+                  </p>
+                  {!selectedTeam.members ||
+                  selectedTeam.members.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
+                      <Users className="mb-3 h-10 w-10 text-border" />
+                      <p>No members in this team</p>
+                      <button
+                        onClick={() => setShowAddMembers(true)}
+                        className="mt-2 text-accent hover:underline"
+                      >
+                        Add members
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {selectedTeam.members.map((tm) => (
+                        <div
+                          key={tm.id}
+                          className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5"
+                        >
                           <div className="flex items-center gap-2.5">
                             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
-                              {member.name.charAt(0)}
+                              {tm.user.name?.charAt(0) ||
+                                tm.user.email.charAt(0).toUpperCase()}
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-ink">{member.name}</p>
-                              <p className="text-xs text-muted-foreground">{member.email}</p>
+                              <p className="text-sm font-medium text-ink">
+                                {tm.user.name || tm.user.email}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {tm.user.email}
+                              </p>
                             </div>
                           </div>
-                          <button
-                            onClick={() => removeMemberFromTeam(selectedTeam.id, mid)}
-                            className="rounded p-1 text-muted-foreground hover:text-red-500"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-muted-foreground">
+                              {tm.role}
+                            </span>
+                            <button
+                              onClick={() =>
+                                handleRemoveTeamMember(
+                                  selectedTeam.id,
+                                  tm.user.id
+                                )
+                              }
+                              className="rounded p-1 text-muted-foreground hover:text-red-500"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : tab === "members" && selectedMember ? (
-            <div className="flex flex-1 flex-col overflow-y-auto p-5">
-              <div className="flex items-center gap-4 mb-5">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 text-base font-medium text-accent">
-                  {selectedMember.name.charAt(0)}
-                </div>
-                <div>
-                  <h2 className="text-base font-semibold text-ink">{selectedMember.name}</h2>
-                  <p className="text-sm text-muted-foreground">{selectedMember.email}</p>
-                </div>
-                <div className="ml-auto">
-                  {selectedMember.status === "invited" ? (
-                    <span className="inline-flex items-center gap-1.5 rounded bg-amber-100 px-3 py-1.5 text-xs text-amber-700">
-                      <Clock className="h-3.5 w-3.5" />
-                      Invited
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded bg-green-100 px-3 py-1.5 text-xs text-green-700">
-                      <Check className="h-3.5 w-3.5" />
-                      Active
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="mb-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Conversations</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">24</p>
-                </div>
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <CheckCheck className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Resolved</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">18</p>
-                </div>
-                <div className="rounded-lg border border-border bg-surface p-4">
-                  <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                    <Timer className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">Avg Response</span>
-                  </div>
-                  <p className="text-xl font-semibold text-ink">1.8m</p>
-                </div>
-              </div>
-
-              <div className="mb-5">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Teams</p>
-                <div className="space-y-1">
-                  {teams.filter((t) => t.memberIds.includes(selectedMember.id)).length === 0 ? (
-                    <p className="text-sm text-muted-foreground">Not assigned to any team</p>
-                  ) : (
-                    teams
-                      .filter((t) => t.memberIds.includes(selectedMember.id))
-                      .map((team) => (
-                        <div key={team.id} className="flex items-center gap-2.5 rounded-lg border border-border px-4 py-2.5">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span className="text-sm text-ink">{team.name}</span>
-                        </div>
-                      ))
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Recent Activity</p>
-                <div className="space-y-3">
-                  {[
-                    { action: "Resolved ticket #1024", time: "2 hours ago" },
-                    { action: "Joined conversation with John Doe", time: "3 hours ago" },
-                    { action: "Assigned to Support team", time: "1 day ago" },
-                  ].map((activity, i) => (
-                    <div key={i} className="flex items-start gap-2.5 rounded-lg border border-border px-4 py-2.5">
-                      <div className="mt-1 h-1.5 w-1.5 rounded-full bg-accent shrink-0" />
-                      <div>
-                        <p className="text-sm text-ink">{activity.action}</p>
-                        <p className="text-xs text-muted-foreground">{activity.time}</p>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
-            </div>
-          ) : tab === "teams" ? (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
-                <Users className="mx-auto mb-3 h-12 w-12 text-border" />
-                <p className="text-sm text-muted-foreground">Select a team to view details</p>
+            ) : tab === "members" && selectedMember ? (
+              <div className="flex flex-1 flex-col overflow-y-auto p-5">
+                <div className="flex items-center gap-4 mb-5">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 text-base font-medium text-accent">
+                    {selectedMember.user.name?.charAt(0) ||
+                      selectedMember.user.email.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-ink">
+                      {selectedMember.user.name || selectedMember.user.email}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedMember.user.email}
+                    </p>
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs ${
+                        selectedMember.status === "active"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-amber-100 text-amber-700"
+                      }`}
+                    >
+                      {selectedMember.status === "active" ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Clock className="h-3.5 w-3.5" />
+                      )}
+                      {selectedMember.status === "active" ? "Active" : "Invited"}
+                    </span>
+                    {selectedMember.user.id !== user?.id &&
+                      selectedMember.role !== "owner" && (
+                        <button
+                          onClick={() => handleRemoveMember(selectedMember.id)}
+                          className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-red-500"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
+                  </div>
+                </div>
+
+                <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="rounded-lg border border-border bg-surface p-4">
+                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                      <Shield className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">Role</span>
+                    </div>
+                    <p className="text-sm font-medium text-ink capitalize">
+                      {selectedMember.role}
+                    </p>
+                  </div>
+                  <div className="rounded-lg border border-border bg-surface p-4">
+                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                      <Users className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">Teams</span>
+                    </div>
+                    <p className="text-sm font-medium text-ink">
+                      0
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Teams
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Not assigned to any team
+                  </p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="text-center">
-                <Users className="mx-auto mb-3 h-12 w-12 text-border" />
-                <p className="text-sm text-muted-foreground">Select a member to view their report</p>
+            ) : tab === "teams" ? (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="text-center">
+                  <Users className="mx-auto mb-3 h-12 w-12 text-border" />
+                  <p className="text-sm text-muted-foreground">
+                    Select a team to view details
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-1 items-center justify-center">
+                <div className="text-center">
+                  <Users className="mx-auto mb-3 h-12 w-12 text-border" />
+                  <p className="text-sm text-muted-foreground">
+                    Select a member to view their profile
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {showCreateTeam && (
         <>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowCreateTeam(false)} />
+          <div
+            className="fixed inset-0 z-40 bg-black/20"
+            onClick={() => setShowCreateTeam(false)}
+          />
           <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-96 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-lg">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-ink">Create Team</h3>
-              <button onClick={() => { setShowCreateTeam(false); setTeamNameError(""); }} className="text-muted-foreground hover:text-foreground">
+              <h3 className="text-base font-semibold text-ink">
+                Create Team
+              </h3>
+              <button
+                onClick={() => setShowCreateTeam(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Team Name</label>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Team Name
+                </label>
                 <input
                   type="text"
                   value={newTeam.name}
-                  onChange={(e) => { setNewTeam({ ...newTeam, name: e.target.value }); setTeamNameError(""); }}
+                  onChange={(e) =>
+                    setNewTeam({ ...newTeam, name: e.target.value })
+                  }
                   placeholder="e.g. Support"
                   className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+                  onKeyDown={(e) => e.key === "Enter" && handleCreateTeam()}
                 />
-                {teamNameError && <p className="mt-1 text-xs text-red-500">{teamNameError}</p>}
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Description</label>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Description
+                </label>
                 <input
                   type="text"
                   value={newTeam.description}
-                  onChange={(e) => setNewTeam({ ...newTeam, description: e.target.value })}
+                  onChange={(e) =>
+                    setNewTeam({ ...newTeam, description: e.target.value })
+                  }
                   placeholder="What is this team for?"
                   className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
                 />
               </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Rules</label>
-                <div className="mt-1.5 space-y-1.5">
-                  {(["admin-approval", "domain-restrict", "max-members"] as TeamRule[]).map((rule) => (
-                    <label key={rule} className="flex items-center gap-2.5 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newTeam.rules.includes(rule)}
-                        onChange={() => toggleRule(rule)}
-                        className="h-4 w-4 rounded border-border text-accent"
-                      />
-                      <span className="text-sm text-ink">{RULE_LABELS[rule]}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
             </div>
             <div className="mt-5 flex justify-end gap-2.5">
-              <button onClick={() => { setShowCreateTeam(false); setTeamNameError(""); }} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setShowCreateTeam(false)}
+                className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
                 Cancel
               </button>
-              <button onClick={createTeam} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90">
+              <button
+                onClick={handleCreateTeam}
+                disabled={!newTeam.name.trim()}
+                className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40"
+              >
                 Create Team
               </button>
             </div>
@@ -531,30 +645,64 @@ export default function TeamsPage() {
 
       {showInviteMember && (
         <>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowInviteMember(false)} />
+          <div
+            className="fixed inset-0 z-40 bg-black/20"
+            onClick={() => setShowInviteMember(false)}
+          />
           <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-96 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-lg">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-ink">Invite Member</h3>
-              <button onClick={() => setShowInviteMember(false)} className="text-muted-foreground hover:text-foreground">
+              <h3 className="text-base font-semibold text-ink">
+                Invite Member
+              </h3>
+              <button
+                onClick={() => setShowInviteMember(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Email Address</label>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="colleague@company.com"
-                className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
-                onKeyDown={(e) => e.key === "Enter" && inviteMember()}
-              />
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  placeholder="colleague@company.com"
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+                  onKeyDown={(e) => e.key === "Enter" && handleInviteMember()}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">
+                  Role
+                </label>
+                <select
+                  value={inviteRole}
+                  onChange={(e) =>
+                    setInviteRole(e.target.value as "admin" | "agent")
+                  }
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none"
+                >
+                  <option value="agent">Agent</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
             </div>
             <div className="mt-5 flex justify-end gap-2.5">
-              <button onClick={() => setShowInviteMember(false)} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setShowInviteMember(false)}
+                className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+              >
                 Cancel
               </button>
-              <button onClick={inviteMember} disabled={!inviteEmail.includes("@")} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40">
+              <button
+                onClick={handleInviteMember}
+                disabled={!inviteEmail.includes("@")}
+                className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40"
+              >
                 Send Invite
               </button>
             </div>
@@ -564,63 +712,102 @@ export default function TeamsPage() {
 
       {showAddMembers && selectedTeam && (
         <>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowAddMembers(false)} />
+          <div
+            className="fixed inset-0 z-40 bg-black/20"
+            onClick={() => setShowAddMembers(false)}
+          />
           <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-96 -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-lg">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-base font-semibold text-ink">Add Members to {selectedTeam.name}</h3>
-              <button onClick={() => setShowAddMembers(false)} className="text-muted-foreground hover:text-foreground">
+              <h3 className="text-base font-semibold text-ink">
+                Add Members to {selectedTeam.name}
+              </h3>
+              <button
+                onClick={() => setShowAddMembers(false)}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <p className="mb-3 text-xs text-muted-foreground">Select members to add to this team</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Select members to add to this team
+            </p>
             <div className="max-h-60 space-y-1 overflow-y-auto">
-              {members.filter((m) => !selectedTeam.memberIds.includes(m.id)).length === 0 ? (
+              {members.filter(
+                (m) =>
+                  m.status === "active" &&
+                  !selectedTeam.members?.some(
+                    (tm) => tm.user.id === m.user.id
+                  )
+              ).length === 0 ? (
                 <p className="py-4 text-center text-sm text-muted-foreground">
-                  All members are already in this team.{" "}
-                  <button onClick={() => { setShowAddMembers(false); setShowInviteMember(true); }} className="text-accent hover:underline">
+                  All active members are already in this team.{" "}
+                  <button
+                    onClick={() => {
+                      setShowAddMembers(false);
+                      setShowInviteMember(true);
+                    }}
+                    className="text-accent hover:underline"
+                  >
                     Invite more
                   </button>
                 </p>
               ) : (
                 <>
                   {members
-                    .filter((m) => !selectedTeam.memberIds.includes(m.id))
+                    .filter(
+                      (m) =>
+                        m.status === "active" &&
+                        !selectedTeam.members?.some(
+                          (tm) => tm.user.id === m.user.id
+                        )
+                    )
                     .map((member) => (
-                      <label key={member.id} className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-surface-2 cursor-pointer">
+                      <label
+                        key={member.id}
+                        className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-surface-2 cursor-pointer"
+                      >
                         <input
                           type="checkbox"
-                          checked={selectedMemberIds.includes(member.id)}
+                          checked={selectedMemberIds.includes(member.user.id)}
                           onChange={() =>
                             setSelectedMemberIds((prev) =>
-                              prev.includes(member.id)
-                                ? prev.filter((id) => id !== member.id)
-                                : [...prev, member.id]
+                              prev.includes(member.user.id)
+                                ? prev.filter((id) => id !== member.user.id)
+                                : [...prev, member.user.id]
                             )
                           }
                           className="h-4 w-4 rounded border-border text-accent"
                         />
                         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20 text-[11px] font-medium text-accent">
-                          {member.name.charAt(0)}
+                          {member.user.name?.charAt(0) ||
+                            member.user.email.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-ink truncate">{member.name}</p>
-                          <p className="text-xs text-muted-foreground truncate">{member.email}</p>
+                          <p className="text-sm text-ink truncate">
+                            {member.user.name || member.user.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {member.user.email}
+                          </p>
                         </div>
-                        <span className={`text-[11px] ${member.status === "active" ? "text-green-600" : "text-amber-600"}`}>
-                          {member.status === "active" ? "Active" : "Invited"}
-                        </span>
                       </label>
                     ))}
                   <div className="mt-3 flex justify-end gap-2.5 border-t border-border pt-3">
-                    <button onClick={() => setShowAddMembers(false)} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
+                    <button
+                      onClick={() => setShowAddMembers(false)}
+                      className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+                    >
                       Cancel
                     </button>
                     <button
-                      onClick={() => { addMembersToTeam(selectedTeam.id, selectedMemberIds); setSelectedMemberIds([]); }}
+                      onClick={handleAddMembersToTeam}
                       disabled={selectedMemberIds.length === 0}
                       className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40"
                     >
-                      Add {selectedMemberIds.length > 0 ? `(${selectedMemberIds.length})` : ""}
+                      Add{" "}
+                      {selectedMemberIds.length > 0
+                        ? `(${selectedMemberIds.length})`
+                        : ""}
                     </button>
                   </div>
                 </>
@@ -629,7 +816,6 @@ export default function TeamsPage() {
           </div>
         </>
       )}
-      </div>
     </div>
   );
 }

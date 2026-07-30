@@ -15,6 +15,7 @@ import { WidgetSelectionScreen } from "../screens/widget-selection-screen";
 import { WidgetChatScreen } from "../screens/widget-chat-screen";
 import { WidgetInboxScreen } from "../screens/widget-inbox-screen";
 import { WidgetHelpScreen } from "../screens/widget-help-screen";
+import { fetchWidgetConfig } from "../../../../lib/widget-api";
 
 interface Props {
   organizationId: string;
@@ -36,6 +37,26 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
     }
     setScreen("selection");
   }, [organizationId, setOrganizationId, setScreen]);
+
+  // Fetch widget config from API
+  useEffect(() => {
+    if (!organizationId) return;
+    fetchWidgetConfig(organizationId).then((cfg) => {
+      setWidgetConfig((prev) => ({
+        ...prev,
+        primaryColor: cfg.primaryColor,
+        companyName: cfg.companyName,
+        logoUrl: cfg.logoUrl,
+        position: cfg.position,
+        borderRadius: cfg.borderRadius,
+        showBranding: cfg.showBranding,
+        autoGreet: cfg.autoGreet,
+        autoGreetDelay: cfg.autoGreetDelay,
+        collectEmail: cfg.collectEmail,
+        helpCenterEnabled: cfg.helpCenterEnabled,
+      }));
+    }).catch(() => {});
+  }, [organizationId, setWidgetConfig]);
 
   // Listen for config from parent (widget.js or dashboard preview)
   useEffect(() => {

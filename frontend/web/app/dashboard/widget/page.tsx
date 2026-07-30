@@ -1,325 +1,276 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+import { useState, useEffect } from "react";
+import { Save, Check, Loader2, Copy, CheckCheck, Paintbrush, Code } from "lucide-react";
+import { api } from "@/lib/api-client";
+import { useAuth } from "@/hooks/use-auth";
 
-type WidgetPosition = "bottom-right" | "bottom-left";
-type Plan = "free" | "starter" | "pro" | "enterprise";
-
-interface WidgetConfig {
-  primaryColor: string;
-  position: WidgetPosition;
-  borderRadius: number;
-  companyName: string;
-  showBranding: boolean;
-  welcomeHeading: string;
-  welcomeSubheading: string;
-  welcomeMessage: string;
-  aiEnabled: boolean;
-  autoGreet: boolean;
-  autoGreetDelay: number;
-  collectEmail: boolean;
-  collectEmailRequired: boolean;
-  allowAttachments: boolean;
-  maxFileSize: number;
-  helpCenterEnabled: boolean;
-  showFaqsOnHome: boolean;
-  faqsDisplayCount: number;
-}
-
-const defaultConfig: WidgetConfig = {
-  primaryColor: "#2563eb",
-  position: "bottom-right",
-  borderRadius: 16,
-  companyName: "Connect",
-  showBranding: true,
-  welcomeHeading: "Hi there! 👋",
-  welcomeSubheading: "How can we help you today?",
-  welcomeMessage: "Hi! How can we help you today?",
-  aiEnabled: true,
-  autoGreet: true,
-  autoGreetDelay: 3,
-  collectEmail: true,
-  collectEmailRequired: false,
-  allowAttachments: true,
-  maxFileSize: 10,
-  helpCenterEnabled: false,
-  showFaqsOnHome: false,
-  faqsDisplayCount: 3,
-};
-
-function CollapsibleGroup({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-b border-border">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-4 py-2.5 text-left text-sm font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-      >
-        {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        {title}
-      </button>
-      {open && <div className="space-y-2 px-3 pb-3">{children}</div>}
-    </div>
-  );
-}
-
-function ColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-6 w-6 cursor-pointer rounded border border-border p-0"
-        />
-        <input
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-xs text-ink outline-none"
-        />
-      </div>
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: { label: string; value: string }[];
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="appearance-none rounded border border-border bg-surface pl-2 pr-5 py-0.5 text-sm text-ink outline-none cursor-pointer"
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 text-muted-foreground" />
-      </div>
-    </div>
-  );
-}
-
-function ToggleField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <button
-        onClick={() => onChange(!value)}
-        className={`relative h-4 w-7 rounded-full transition-colors ${
-          value ? "bg-accent" : "bg-surface-2"
-        }`}
-      >
-        <div
-          className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
-            value ? "translate-x-3.5" : "translate-x-0.5"
-          }`}
-        />
-      </button>
-    </div>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  max,
-  suffix,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min?: number;
-  max?: number;
-  suffix?: string;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2.5">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <input
-          type="number"
-          value={value}
-          min={min}
-          max={max}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="w-12 rounded border border-border bg-surface px-1 py-0.5 text-sm text-ink outline-none text-right"
-        />
-        {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
-      </div>
-    </div>
-  );
-}
-
-function TextField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div>
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded border border-border bg-surface px-2 py-1 text-sm text-ink outline-none focus:border-ink"
-      />
-    </div>
-  );
-}
+type Tab = "appearance" | "install";
 
 export default function WidgetPage() {
-  const [config, setConfig] = useState<WidgetConfig>(defaultConfig);
-  const [showPreview, setShowPreview] = useState(true);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [iframeReady, setIframeReady] = useState(false);
-
-  const update = <K extends keyof WidgetConfig>(key: K, value: WidgetConfig[K]) => {
-    setConfig((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const sendConfigToIframe = useCallback(() => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(
-        { type: "connect:config", payload: config },
-        "*",
-      );
-    }
-  }, [config]);
-
-  useEffect(() => {
-    if (iframeReady) sendConfigToIframe();
-  }, [sendConfigToIframe, iframeReady]);
+  const { user } = useAuth();
+  const [tab, setTab] = useState<Tab>("appearance");
 
   return (
-    <div className="flex h-full gap-1.5 md:pl-3">
-      <div className="flex flex-1 flex-col bg-card shadow-sm overflow-y-auto">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-          <h2 className="text-sm font-semibold text-ink">Widget</h2>
-        </div>
-
-        <CollapsibleGroup title="Launcher" defaultOpen>
-          <SelectField
-            label="Position"
-            value={config.position}
-            options={[
-              { label: "Bottom Right", value: "bottom-right" },
-              { label: "Bottom Left", value: "bottom-left" },
-            ]}
-            onChange={(v) => update("position", v as WidgetPosition)}
-          />
-          <NumberField label="Border Radius" value={config.borderRadius} min={0} max={32} suffix="px" onChange={(v) => update("borderRadius", v)} />
-        </CollapsibleGroup>
-
-        <CollapsibleGroup title="Branding" defaultOpen>
-          <ColorField label="Primary Color" value={config.primaryColor} onChange={(v) => update("primaryColor", v)} />
-          <TextField label="Company Name" value={config.companyName} onChange={(v) => update("companyName", v)} />
-          <ToggleField label="Show Branding" value={config.showBranding} onChange={(v) => update("showBranding", v)} />
-        </CollapsibleGroup>
-
-        <CollapsibleGroup title="Greeting">
-          <TextField label="Heading" value={config.welcomeHeading} onChange={(v) => update("welcomeHeading", v)} />
-          <TextField label="Subheading" value={config.welcomeSubheading} onChange={(v) => update("welcomeSubheading", v)} />
-          <TextField label="Message" value={config.welcomeMessage} onChange={(v) => update("welcomeMessage", v)} />
-          <ToggleField label="Auto Greet" value={config.autoGreet} onChange={(v) => update("autoGreet", v)} />
-          <NumberField label="Greet Delay" value={config.autoGreetDelay} min={0} max={30} suffix="s" onChange={(v) => update("autoGreetDelay", v)} />
-        </CollapsibleGroup>
-
-        <CollapsibleGroup title="Behavior">
-          <ToggleField label="AI Enabled" value={config.aiEnabled} onChange={(v) => update("aiEnabled", v)} />
-          <ToggleField label="Allow Attachments" value={config.allowAttachments} onChange={(v) => update("allowAttachments", v)} />
-          <NumberField label="Max File Size" value={config.maxFileSize} min={1} max={50} suffix="MB" onChange={(v) => update("maxFileSize", v)} />
-        </CollapsibleGroup>
-
-        <CollapsibleGroup title="Data Collection">
-          <ToggleField label="Collect Email" value={config.collectEmail} onChange={(v) => update("collectEmail", v)} />
-          <ToggleField label="Email Required" value={config.collectEmailRequired} onChange={(v) => update("collectEmailRequired", v)} />
-        </CollapsibleGroup>
-
-        <CollapsibleGroup title="Help Center">
-          <ToggleField label="Help Center Enabled" value={config.helpCenterEnabled} onChange={(v) => update("helpCenterEnabled", v)} />
-          <ToggleField label="Show FAQs on Home" value={config.showFaqsOnHome} onChange={(v) => update("showFaqsOnHome", v)} />
-          <NumberField label="FAQ Display Count" value={config.faqsDisplayCount} min={1} max={10} onChange={(v) => update("faqsDisplayCount", v)} />
-        </CollapsibleGroup>
-      </div>
-
-      <div className="relative flex flex-1 flex-col overflow-hidden rounded-tr-lg bg-card shadow-sm">
-        <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-          <h3 className="text-sm font-semibold text-ink">Preview</h3>
+    <div className="flex h-full flex-col md:pl-3">
+      <div className="flex flex-1 flex-col overflow-hidden bg-card shadow-sm">
+        <div className="flex items-center gap-6 border-b border-border px-5">
           <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            onClick={() => setTab("appearance")}
+            className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+              tab === "appearance"
+                ? "border-accent text-accent"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
           >
-            {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            {showPreview ? "Hide Widget" : "Show Widget"}
+            <Paintbrush className="h-4 w-4" />
+            Appearance
+          </button>
+          <button
+            onClick={() => setTab("install")}
+            className={`flex items-center gap-2 border-b-2 px-1 py-3 text-sm font-medium transition-colors ${
+              tab === "install"
+                ? "border-accent text-accent"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Code className="h-4 w-4" />
+            Install
           </button>
         </div>
-        <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-[#f8f9fa]">
-          {!showPreview && (
-            <span className="text-sm text-muted-foreground">Widget hidden</span>
+
+        {tab === "appearance" && <AppearanceTab />}
+        {tab === "install" && <InstallTab />}
+      </div>
+    </div>
+  );
+}
+
+function AppearanceTab() {
+  const [widget, setWidget] = useState({
+    position: "bottom-right" as "bottom-right" | "bottom-left",
+    borderRadius: 16,
+    autoGreet: true,
+    autoGreetDelay: 3,
+    collectEmail: true,
+    showBranding: true,
+    helpCenterEnabled: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get<any>("/api/workspace/widget-config").catch(() => null).then((w) => {
+      if (w) {
+        setWidget({
+          position: w.position || "bottom-right",
+          borderRadius: w.border_radius ?? 16,
+          autoGreet: w.auto_greet ?? true,
+          autoGreetDelay: w.auto_greet_delay ?? 3,
+          collectEmail: w.collect_email ?? true,
+          showBranding: w.show_branding ?? true,
+          helpCenterEnabled: w.help_center_enabled ?? true,
+        });
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    setMsg("");
+    try {
+      await api.patch("/api/workspace/widget-config", {
+        position: widget.position,
+        border_radius: widget.borderRadius,
+        auto_greet: widget.autoGreet,
+        auto_greet_delay: widget.autoGreetDelay,
+        collect_email: widget.collectEmail,
+        show_branding: widget.showBranding,
+        help_center_enabled: widget.helpCenterEnabled,
+      });
+      setMsg("Saved");
+      setTimeout(() => setMsg(""), 2000);
+    } catch {
+      setMsg("Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-1 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-ink">Widget Appearance</h2>
+          <p className="text-xs text-muted-foreground mt-1">Customize how the widget looks and behaves</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? "Saving..." : "Save"}
+          </button>
+          {msg && (
+            <span className="flex items-center gap-1 text-xs text-emerald-600">
+              <Check className="h-3.5 w-3.5" /> {msg}
+            </span>
           )}
-          <iframe
-            ref={iframeRef}
-            src="http://localhost:3001?mode=preview"
-            className={`h-full w-full border-0 transition-opacity ${showPreview ? "opacity-100" : "pointer-events-none opacity-0"}`}
-            title="Widget Preview"
-            onLoad={() => {
-              setIframeReady(true);
-            }}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Position</label>
+        <div className="mt-1 flex gap-2">
+          <button
+            onClick={() => setWidget({ ...widget, position: "bottom-right" })}
+            className={`rounded-md border px-4 py-2 text-sm transition-colors ${
+              widget.position === "bottom-right"
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Bottom Right
+          </button>
+          <button
+            onClick={() => setWidget({ ...widget, position: "bottom-left" })}
+            className={`rounded-md border px-4 py-2 text-sm transition-colors ${
+              widget.position === "bottom-left"
+                ? "border-accent bg-accent/10 text-accent"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Bottom Left
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Border Radius ({widget.borderRadius}px)</label>
+        <input
+          type="range"
+          min={0}
+          max={24}
+          value={widget.borderRadius}
+          onChange={(e) => setWidget({ ...widget, borderRadius: Number(e.target.value) })}
+          className="mt-1 w-full max-w-xs"
+        />
+      </div>
+
+      <div className="space-y-3">
+        {([
+          { key: "autoGreet" as const, label: "Auto Greet Visitors" },
+          { key: "collectEmail" as const, label: "Collect Email" },
+          { key: "showBranding" as const, label: "Show Branding" },
+          { key: "helpCenterEnabled" as const, label: "Enable Help Center" },
+        ]).map(({ key, label }) => (
+          <label key={key} className="flex items-center gap-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={widget[key]}
+              onChange={() => setWidget({ ...widget, [key]: !widget[key] })}
+              className="h-4 w-4 rounded border-border text-accent"
+            />
+            <span className="text-sm text-ink">{label}</span>
+          </label>
+        ))}
+      </div>
+
+      {widget.autoGreet && (
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">Auto Greet Delay ({widget.autoGreetDelay}s)</label>
+          <input
+            type="range"
+            min={1}
+            max={15}
+            value={widget.autoGreetDelay}
+            onChange={(e) => setWidget({ ...widget, autoGreetDelay: Number(e.target.value) })}
+            className="mt-1 w-full max-w-xs"
           />
         </div>
+      )}
+    </div>
+  );
+}
+
+function InstallTab() {
+  const { user } = useAuth();
+  const [origin, setOrigin] = useState("https://your-domain.com");
+  const [copiedId, setCopiedId] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+  }, []);
+
+  const orgId = user?.organization?.id || "";
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-ink">Install Widget</h2>
+        <p className="text-xs text-muted-foreground mt-1">
+          Copy the embed snippet below to add the chat widget to your website.
+        </p>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Workspace ID</label>
+        <div className="mt-1 flex max-w-md items-center gap-2">
+          <input
+            type="text"
+            readOnly
+            value={orgId}
+            className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm font-mono text-ink outline-none"
+          />
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(orgId);
+              setCopiedId(true);
+              setTimeout(() => setCopiedId(false), 2000);
+            }}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+          >
+            {copiedId ? <CheckCheck className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            {copiedId ? "Copied" : "Copy"}
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-medium text-muted-foreground">Embed Code</label>
+        <pre className="mt-1 max-w-xl overflow-x-auto rounded-md border border-border bg-surface p-3 text-xs font-mono text-ink leading-relaxed">
+{`<iframe
+  src="${origin}/widget?organizationId=${orgId}"
+  style="position:fixed;bottom:20px;right:20px;width:380px;height:600px;border:none;z-index:9999"
+  title="Connect Widget"
+/>`}
+        </pre>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(
+              `<iframe\n  src="${origin}/widget?organizationId=${orgId}"\n  style="position:fixed;bottom:20px;right:20px;width:380px;height:600px;border:none;z-index:9999"\n  title="Connect Widget"\n/>`
+            );
+            setCopiedCode(true);
+            setTimeout(() => setCopiedCode(false), 2000);
+          }}
+          className="mt-2 flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {copiedCode ? <CheckCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copiedCode ? "Copied" : "Copy Code"}
+        </button>
       </div>
     </div>
   );

@@ -30,8 +30,8 @@ export function WidgetConversationList({
             onClick={() => onSelectConversation(conv._id)}
             className="w-full border-b px-4 py-3 text-left hover:bg-gray-50"
           >
-            <p className="text-sm font-semibold">{conv.title}</p>
-            <p className="text-xs text-gray-500 truncate">{conv.lastMessagePreview}</p>
+            <p className="text-sm font-semibold">{conv.contactName}</p>
+            <p className="text-xs text-gray-500 truncate">{conv.lastMessage}</p>
           </button>
         ))}
       </div>
