@@ -177,6 +177,13 @@ def remove_member(request, pk):
     if target.role == "owner":
         return Response({"detail": "Cannot remove the owner"}, status=status.HTTP_400_BAD_REQUEST)
 
+    caller_membership = Membership.objects.filter(
+        user=request.user, organization=org, role__in=["owner", "admin"]
+    ).first()
+
+    if caller_membership.role == "admin" and target.role == "admin":
+        return Response({"detail": "Admins cannot remove other admins"}, status=status.HTTP_403_FORBIDDEN)
+
     target.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -195,6 +202,16 @@ def update_member_role(request, pk):
         target = Membership.objects.get(pk=pk, organization=org)
     except Membership.DoesNotExist:
         return Response({"detail": "Member not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if target.role == "owner":
+        return Response({"detail": "Cannot change the owner's role"}, status=status.HTTP_400_BAD_REQUEST)
+
+    caller_membership = Membership.objects.filter(
+        user=request.user, organization=org, role__in=["owner", "admin"]
+    ).first()
+
+    if caller_membership.role == "admin" and target.role == "admin":
+        return Response({"detail": "Admins cannot change other admin roles"}, status=status.HTTP_403_FORBIDDEN)
 
     new_role = request.data.get("role")
     if new_role not in ["admin", "agent"]:
@@ -419,6 +436,9 @@ def add_team_members(request, pk):
     serializer = AddMembersSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     user_ids = serializer.validated_data["user_ids"]
+    role = request.data.get("role", "member")
+    if role not in ["admin", "member"]:
+        role = "member"
 
     org_member_ids = list(
         Membership.objects.filter(organization=org, status="active").values_list("user_id", flat=True)
@@ -428,7 +448,7 @@ def add_team_members(request, pk):
     for user_id in user_ids:
         if user_id not in org_member_ids:
             continue
-        _, created = TeamMembership.objects.get_or_create(team=team, user_id=user_id)
+        _, created = TeamMembership.objects.get_or_create(team=team, user_id=user_id, defaults={"role": role})
         if created:
             added += 1
 
@@ -457,6 +477,128 @@ def remove_team_member(request, pk, user_id):
         return Response({"detail": "Member not in team"}, status=status.HTTP_404_NOT_FOUND)
 
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def update_team_member_role(request, pk, user_id):
+    org = get_org(request)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not require_admin(request, org):
+        return Response({"detail": "Only admins can manage team members"}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        team = Team.objects.get(pk=pk, organization=org)
+    except Team.DoesNotExist:
+        return Response({"detail": "Team not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    new_role = request.data.get("role")
+    if new_role not in ["admin", "member"]:
+        return Response({"detail": "Invalid role. Must be 'admin' or 'member'"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        tm = TeamMembership.objects.get(team=team, user_id=user_id)
+    except TeamMembership.DoesNotExist:
+        return Response({"detail": "Member not in team"}, status=status.HTTP_404_NOT_FOUND)
+
+    tm.role = new_role
+    tm.save(update_fields=["role"])
+
+    return Response({
+        "user": {
+            "id": str(tm.user.id),
+            "email": tm.user.email,
+            "name": tm.user.first_name or tm.user.email,
+        },
+        "role": tm.role,
+    })
+
+
+# ─── Team Analytics ─────────────────────────────────────────────────────────
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def team_analytics(request, pk):
+    from conversations.models import Conversation, Message
+    from django.db.models import Count, Q
+
+    org = get_org(request)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        team = Team.objects.get(pk=pk, organization=org)
+    except Team.DoesNotExist:
+        return Response({"detail": "Team not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    team_user_ids = TeamMembership.objects.filter(team=team).values_list("user_id", flat=True)
+
+    conversations = Conversation.objects.filter(
+        organization=org, assignee_id__in=team_user_ids
+    )
+
+    status_counts = conversations.aggregate(
+        total=Count("id"),
+        open=Count("id", filter=Q(status="open")),
+        pending=Count("id", filter=Q(status="pending")),
+        closed=Count("id", filter=Q(status="closed")),
+    )
+
+    total_messages = Message.objects.filter(
+        conversation__organization=org,
+        conversation__assignee_id__in=team_user_ids,
+        is_from_customer=False,
+    ).count()
+
+    member_stats = []
+    for tm in TeamMembership.objects.filter(team=team).select_related("user"):
+        member_convs = Conversation.objects.filter(
+            organization=org, assignee=tm.user
+        )
+        member_msgs = Message.objects.filter(
+            conversation__organization=org,
+            conversation__assignee=tm.user,
+            is_from_customer=False,
+        ).count()
+        member_stats.append({
+            "user": {
+                "id": str(tm.user.id),
+                "email": tm.user.email,
+                "name": tm.user.first_name or tm.user.email,
+            },
+            "role": tm.role,
+            "conversations_handled": member_convs.count(),
+            "open": member_convs.filter(status="open").count(),
+            "closed": member_convs.filter(status="closed").count(),
+            "messages_sent": member_msgs,
+        })
+
+    recent_convs = conversations.select_related("assignee").order_by("-last_message_at")[:5]
+    recent = []
+    for c in recent_convs:
+        recent.append({
+            "id": str(c.id),
+            "customer_name": c.customer_name or "Unknown",
+            "subject": c.subject or "No subject",
+            "status": c.status,
+            "assignee": c.assignee.email if c.assignee else None,
+            "last_message_at": c.last_message_at.isoformat(),
+        })
+
+    return Response({
+        "team": {
+            "id": str(team.id),
+            "name": team.name,
+            "description": team.description,
+        },
+        "conversations": status_counts,
+        "total_messages": total_messages,
+        "members": member_stats,
+        "recent_conversations": recent,
+    })
 
 
 # ─── Auto-Assignment ────────────────────────────────────────────────────────

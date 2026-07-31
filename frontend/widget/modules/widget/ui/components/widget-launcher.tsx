@@ -11,13 +11,13 @@ export const WidgetLauncher = () => {
 
   const launcherColor = activeConfig?.primaryColor || "#2563eb";
   const position = activeConfig?.position || "bottom-right";
-  const posClasses = position === "bottom-left" ? "bottom-4 left-4" : "bottom-4 right-4";
+  const posClasses = position === "bottom-left" ? "bottom-3 left-4" : "bottom-3 right-4";
 
   return (
     <button
       onClick={() => setIsOpen(!isOpen)}
       className={cn(
-        "fixed z-50 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95",
+        "fixed z-50 flex h-12 w-12 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95",
         "text-white",
         posClasses,
       )}

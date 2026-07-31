@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Save, Check, Loader2, Copy, CheckCheck, Paintbrush, Code } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Save, Check, Loader2, Copy, CheckCheck, Paintbrush, Code, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -47,6 +47,8 @@ export default function WidgetPage() {
 }
 
 function AppearanceTab() {
+  const { user } = useAuth();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [widget, setWidget] = useState({
     position: "bottom-right" as "bottom-right" | "bottom-left",
     borderRadius: 16,
@@ -59,6 +61,16 @@ function AppearanceTab() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(true);
+  const [iframeKey, setIframeKey] = useState(0);
+
+  const orgId = user?.organization?.id || "";
+  const [widgetUrl, setWidgetUrl] = useState("");
+
+  useEffect(() => {
+    if (orgId) {
+      setWidgetUrl(`http://localhost:3001?organizationId=${orgId}&mode=preview`);
+    }
+  }, [orgId]);
 
   useEffect(() => {
     api.get<any>("/api/workspace/widget-config").catch(() => null).then((w) => {
@@ -77,6 +89,31 @@ function AppearanceTab() {
     });
   }, []);
 
+  const pushConfig = useCallback(() => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        type: "connect:config-update",
+        payload: {
+          position: widget.position,
+          borderRadius: widget.borderRadius,
+          autoGreet: widget.autoGreet,
+          autoGreetDelay: widget.autoGreetDelay,
+          collectEmail: widget.collectEmail,
+          showBranding: widget.showBranding,
+          helpCenterEnabled: widget.helpCenterEnabled,
+        },
+      },
+      "*",
+    );
+  }, [widget]);
+
+  useEffect(() => {
+    const timer = setTimeout(pushConfig, 300);
+    return () => clearTimeout(timer);
+  }, [iframeKey, pushConfig]);
+
   const save = async () => {
     setSaving(true);
     setMsg("");
@@ -91,6 +128,7 @@ function AppearanceTab() {
         help_center_enabled: widget.helpCenterEnabled,
       });
       setMsg("Saved");
+      setIframeKey((k) => k + 1);
       setTimeout(() => setMsg(""), 2000);
     } catch {
       setMsg("Failed to save");
@@ -108,99 +146,164 @@ function AppearanceTab() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-ink">Widget Appearance</h2>
-          <p className="text-xs text-muted-foreground mt-1">Customize how the widget looks and behaves</p>
+    <div className="flex flex-1 overflow-hidden">
+      {/* Left Column — Settings */}
+      <div className="flex w-1/2 flex-col border-r border-border overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold text-ink">Widget Appearance</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Customize how the widget looks and behaves</p>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex-1 space-y-4 p-4">
+          {/* Position */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Position</label>
+            <div className="mt-2 flex gap-2">
+              {(["bottom-right", "bottom-left"] as const).map((pos) => (
+                <button
+                  key={pos}
+                  onClick={() => setWidget({ ...widget, position: pos })}
+                  className={`flex-1 rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                    widget.position === pos
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"
+                  }`}
+                >
+                  {pos === "bottom-right" ? "Bottom Right" : "Bottom Left"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Border Radius */}
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-muted-foreground">Corner Roundness</label>
+              <span className="text-xs tabular-nums text-muted-foreground">{widget.borderRadius}px</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={24}
+              value={widget.borderRadius}
+              onChange={(e) => setWidget({ ...widget, borderRadius: Number(e.target.value) })}
+              className="mt-2 w-full accent-accent"
+            />
+            <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+              <span>Square</span>
+              <span>Round</span>
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Behavior</p>
+            {([
+              { key: "autoGreet" as const, label: "Auto Greet Visitors", desc: "Show a greeting message after a delay" },
+              { key: "collectEmail" as const, label: "Collect Email", desc: "Require name and email before chatting" },
+              { key: "showBranding" as const, label: "Show Branding", desc: "Display \"Powered by Connect\" in footer" },
+              { key: "helpCenterEnabled" as const, label: "Enable Help Center", desc: "Show knowledge base articles in widget" },
+            ]).map(({ key, label, desc }) => (
+              <label
+                key={key}
+                className="flex cursor-pointer items-center justify-between rounded-lg border border-border px-3.5 py-3 transition-colors hover:bg-surface-2"
+              >
+                <div className="min-w-0">
+                  <span className="block text-sm text-ink">{label}</span>
+                  <span className="block text-[11px] text-muted-foreground">{desc}</span>
+                </div>
+                <div className="ml-3 shrink-0">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={widget[key]}
+                    onClick={() => setWidget({ ...widget, [key]: !widget[key] })}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
+                      widget[key] ? "bg-accent" : "bg-border"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                        widget[key] ? "translate-x-[17px]" : "translate-x-[3px]"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </label>
+            ))}
+          </div>
+
+          {/* Auto Greet Delay */}
+          {widget.autoGreet && (
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-muted-foreground">Greet Delay</label>
+                <span className="text-xs tabular-nums text-muted-foreground">{widget.autoGreetDelay}s</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={15}
+                value={widget.autoGreetDelay}
+                onChange={(e) => setWidget({ ...widget, autoGreetDelay: Number(e.target.value) })}
+                className="mt-2 w-full accent-accent"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Save Bar */}
+        <div className="border-t border-border px-4 py-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+            {msg && (
+              <span className="flex items-center gap-1 text-xs text-emerald-600">
+                <Check className="h-3.5 w-3.5" /> {msg}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right Column — Live Preview */}
+      <div className="flex w-1/2 flex-col overflow-hidden">
+        <div className="flex items-center justify-between border-b border-border px-4 py-2">
+          <span className="text-xs font-medium text-muted-foreground">Live Preview</span>
           <button
-            onClick={save}
-            disabled={saving}
-            className="flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            onClick={() => setIframeKey((k) => k + 1)}
+            className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
           >
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? "Saving..." : "Save"}
+            <RefreshCw className="h-3 w-3" />
+            Refresh
           </button>
-          {msg && (
-            <span className="flex items-center gap-1 text-xs text-emerald-600">
-              <Check className="h-3.5 w-3.5" /> {msg}
-            </span>
+        </div>
+
+        <div className="flex-1 overflow-hidden">
+          {widgetUrl ? (
+            <iframe
+              key={iframeKey}
+              ref={iframeRef}
+              src={widgetUrl}
+              className="h-full w-full border-0 bg-white"
+              title="Widget Preview"
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-xs">Loading workspace...</span>
+            </div>
           )}
         </div>
       </div>
-
-      <div>
-        <label className="text-xs font-medium text-muted-foreground">Position</label>
-        <div className="mt-1 flex gap-2">
-          <button
-            onClick={() => setWidget({ ...widget, position: "bottom-right" })}
-            className={`rounded-md border px-4 py-2 text-sm transition-colors ${
-              widget.position === "bottom-right"
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Bottom Right
-          </button>
-          <button
-            onClick={() => setWidget({ ...widget, position: "bottom-left" })}
-            className={`rounded-md border px-4 py-2 text-sm transition-colors ${
-              widget.position === "bottom-left"
-                ? "border-accent bg-accent/10 text-accent"
-                : "border-border text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Bottom Left
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <label className="text-xs font-medium text-muted-foreground">Border Radius ({widget.borderRadius}px)</label>
-        <input
-          type="range"
-          min={0}
-          max={24}
-          value={widget.borderRadius}
-          onChange={(e) => setWidget({ ...widget, borderRadius: Number(e.target.value) })}
-          className="mt-1 w-full max-w-xs"
-        />
-      </div>
-
-      <div className="space-y-3">
-        {([
-          { key: "autoGreet" as const, label: "Auto Greet Visitors" },
-          { key: "collectEmail" as const, label: "Collect Email" },
-          { key: "showBranding" as const, label: "Show Branding" },
-          { key: "helpCenterEnabled" as const, label: "Enable Help Center" },
-        ]).map(({ key, label }) => (
-          <label key={key} className="flex items-center gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={widget[key]}
-              onChange={() => setWidget({ ...widget, [key]: !widget[key] })}
-              className="h-4 w-4 rounded border-border text-accent"
-            />
-            <span className="text-sm text-ink">{label}</span>
-          </label>
-        ))}
-      </div>
-
-      {widget.autoGreet && (
-        <div>
-          <label className="text-xs font-medium text-muted-foreground">Auto Greet Delay ({widget.autoGreetDelay}s)</label>
-          <input
-            type="range"
-            min={1}
-            max={15}
-            value={widget.autoGreetDelay}
-            onChange={(e) => setWidget({ ...widget, autoGreetDelay: Number(e.target.value) })}
-            className="mt-1 w-full max-w-xs"
-          />
-        </div>
-      )}
     </div>
   );
 }

@@ -52,6 +52,30 @@ export interface UserOrg {
   is_primary: boolean;
 }
 
+export interface TeamAnalyticsMember {
+  user: { id: string; email: string; name: string };
+  role: string;
+  conversations_handled: number;
+  open: number;
+  closed: number;
+  messages_sent: number;
+}
+
+export interface TeamAnalytics {
+  team: { id: string; name: string; description: string };
+  conversations: { total: number; open: number; pending: number; closed: number };
+  total_messages: number;
+  members: TeamAnalyticsMember[];
+  recent_conversations: Array<{
+    id: string;
+    customer_name: string;
+    subject: string;
+    status: string;
+    assignee: string | null;
+    last_message_at: string;
+  }>;
+}
+
 export const teamsApi = {
   listMembers: () => api.get<Membership[]>("/api/members"),
   inviteMember: (data: { email: string; role?: string }) =>
@@ -71,11 +95,15 @@ export const teamsApi = {
   updateTeam: (id: string, data: { name?: string; description?: string }) =>
     api.patch<TeamDetail>(`/api/teams/${id}/update`, data),
   deleteTeam: (id: string) => api.delete(`/api/teams/${id}/delete`),
-  addTeamMembers: (teamId: string, userIds: string[]) =>
-    api.post(`/api/teams/${teamId}/members`, { user_ids: userIds }),
+  addTeamMembers: (teamId: string, userIds: string[], role?: string) =>
+    api.post(`/api/teams/${teamId}/members`, { user_ids: userIds, role: role || "member" }),
   removeTeamMember: (teamId: string, userId: string) =>
     api.delete(`/api/teams/${teamId}/members/${userId}`),
 
   getUserOrgs: () => api.get<UserOrg[]>("/api/user-orgs"),
   switchOrg: (orgId: string) => api.post<{ id: string; name: string; slug: string; plan: string; timezone: string; created_at: string }>("/api/switch-org", { org_id: orgId }),
+
+  getTeamAnalytics: (teamId: string) => api.get<TeamAnalytics>(`/api/teams/${teamId}/analytics`),
+  updateTeamMemberRole: (teamId: string, userId: string, role: string) =>
+    api.patch<{ user: { id: string; email: string; name: string }; role: string }>(`/api/teams/${teamId}/members/${userId}/role`, { role }),
 };
