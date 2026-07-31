@@ -41,6 +41,8 @@ def widget_config(request):
         "autoGreetDelay": wc.auto_greet_delay,
         "collectEmail": wc.collect_email,
         "helpCenterEnabled": wc.help_center_enabled,
+        "showFaqsOnHome": wc.show_faqs_on_home,
+        "faqsDisplayCount": wc.faqs_display_count,
     })
 
 
@@ -49,22 +51,30 @@ def widget_config(request):
 @throttle_classes([AnonRateThrottle])
 def widget_conversations(request):
     if request.method == "GET":
-        email = request.query_params.get("email", "").strip()
+        email = request.query_params.get("email", "").strip().lower()
         org_id = request.query_params.get("organization_id", "").strip()
-        if not email and not org_id:
-            return Response({"error": "email or organization_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        session_token = request.query_params.get("session_token", "").strip()
+        if not email and not org_id and not session_token:
+            return Response({"error": "email, organization_id, or session_token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        qs = Conversation.objects.all()
-        if email:
-            qs = qs.filter(customer_email=email)
         if org_id:
             try:
                 uuid.UUID(org_id)
-                qs = qs.filter(organization_id=org_id)
             except ValueError:
                 return Response({"error": "Invalid organization_id"}, status=status.HTTP_400_BAD_REQUEST)
 
-        qs = qs.order_by("-last_message_at")[:20]
+        from django.db.models import Q
+        q = Q()
+        if org_id:
+            q &= Q(organization_id=org_id)
+        if email and session_token:
+            q &= (Q(customer_email__iexact=email) | Q(session_token=session_token))
+        elif email:
+            q &= Q(customer_email__iexact=email)
+        elif session_token:
+            q &= Q(session_token=session_token)
+
+        qs = Conversation.objects.filter(q).order_by("-last_message_at")[:20]
         return Response(ConversationListSerializer(qs, many=True).data)
 
     # POST — create new conversation
@@ -80,8 +90,9 @@ def widget_conversations(request):
         organization=org,
         status="open",
         channel="widget",
-        customer_name=request.data.get("customer_name", ""),
-        customer_email=request.data.get("customer_email", ""),
+        customer_name=request.data.get("customer_name", "").strip(),
+        customer_email=request.data.get("customer_email", "").strip().lower(),
+        session_token=request.data.get("session_token", "").strip(),
         subject=request.data.get("subject", ""),
     )
 

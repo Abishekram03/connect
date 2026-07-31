@@ -57,6 +57,8 @@ function AppearanceTab() {
     collectEmail: true,
     showBranding: true,
     helpCenterEnabled: true,
+    showFaqsOnHome: false,
+    faqsDisplayCount: 3,
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -83,6 +85,8 @@ function AppearanceTab() {
           collectEmail: w.collect_email ?? true,
           showBranding: w.show_branding ?? true,
           helpCenterEnabled: w.help_center_enabled ?? true,
+          showFaqsOnHome: w.show_faqs_on_home ?? false,
+          faqsDisplayCount: w.faqs_display_count ?? 3,
         });
       }
       setLoading(false);
@@ -103,6 +107,8 @@ function AppearanceTab() {
           collectEmail: widget.collectEmail,
           showBranding: widget.showBranding,
           helpCenterEnabled: widget.helpCenterEnabled,
+          showFaqsOnHome: widget.showFaqsOnHome,
+          faqsDisplayCount: widget.faqsDisplayCount,
         },
       },
       "*",
@@ -126,6 +132,8 @@ function AppearanceTab() {
         collect_email: widget.collectEmail,
         show_branding: widget.showBranding,
         help_center_enabled: widget.helpCenterEnabled,
+        show_faqs_on_home: widget.showFaqsOnHome,
+        faqs_display_count: widget.faqsDisplayCount,
       });
       setMsg("Saved");
       setIframeKey((k) => k + 1);
@@ -250,6 +258,58 @@ function AppearanceTab() {
                 onChange={(e) => setWidget({ ...widget, autoGreetDelay: Number(e.target.value) })}
                 className="mt-2 w-full accent-accent"
               />
+            </div>
+          )}
+
+          {/* FAQ Settings */}
+          {widget.helpCenterEnabled && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground mb-2">FAQ on Home Screen</p>
+              <label
+                className="flex cursor-pointer items-center justify-between rounded-lg border border-border px-3.5 py-3 transition-colors hover:bg-surface-2"
+              >
+                <div className="min-w-0">
+                  <span className="block text-sm text-ink">Show FAQs on Home</span>
+                  <span className="block text-[11px] text-muted-foreground">Display quick answers on the home screen</span>
+                </div>
+                <div className="ml-3 shrink-0">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={widget.showFaqsOnHome}
+                    onClick={() => setWidget({ ...widget, showFaqsOnHome: !widget.showFaqsOnHome })}
+                    className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors ${
+                      widget.showFaqsOnHome ? "bg-accent" : "bg-border"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                        widget.showFaqsOnHome ? "translate-x-[17px]" : "translate-x-[3px]"
+                      }`}
+                    />
+                  </button>
+                </div>
+              </label>
+              {widget.showFaqsOnHome && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-muted-foreground">FAQs to Show</label>
+                    <span className="text-xs tabular-nums text-muted-foreground">{widget.faqsDisplayCount}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={widget.faqsDisplayCount}
+                    onChange={(e) => setWidget({ ...widget, faqsDisplayCount: Number(e.target.value) })}
+                    className="mt-2 w-full accent-accent"
+                  />
+                  <div className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+                    <span>1</span>
+                    <span>10</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

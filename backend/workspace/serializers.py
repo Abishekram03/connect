@@ -21,6 +21,7 @@ class WidgetConfigSerializer(serializers.ModelSerializer):
         fields = [
             "position", "border_radius", "auto_greet", "auto_greet_delay",
             "collect_email", "show_branding", "help_center_enabled",
+            "show_faqs_on_home", "faqs_display_count",
         ]
 
 

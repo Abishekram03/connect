@@ -26,6 +26,8 @@ class WidgetConfig(models.Model):
     collect_email = models.BooleanField(default=True)
     show_branding = models.BooleanField(default=True)
     help_center_enabled = models.BooleanField(default=True)
+    show_faqs_on_home = models.BooleanField(default=False)
+    faqs_display_count = models.IntegerField(default=3)
 
     def __str__(self):
         return f"Widget config for {self.organization.name}"
