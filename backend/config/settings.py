@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "workspace",
     "conversations",
     "teams",
+    "knowledge_base",
 ]
 
 MIDDLEWARE = [

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
   X,
@@ -12,120 +12,198 @@ import {
   Eye,
   FolderOpen,
   BookOpen,
-  MessageSquare,
   ChevronRight,
   Globe,
+  Loader2,
 } from "lucide-react";
-
-type Category = {
-  id: string;
-  name: string;
-  description: string;
-  articleCount: number;
-};
-
-type FAQ = {
-  id: string;
-  question: string;
-  answer: string;
-  category: string;
-  updatedAt: string;
-};
-
-type Article = {
-  id: string;
-  title: string;
-  content: string;
-  category: string;
-  updatedAt: string;
-  published: boolean;
-};
-
-const defaultCategories: Category[] = [];
-
-const defaultFAQs: FAQ[] = [];
-
-const defaultArticles: Article[] = [];
+import {
+  fetchCategories,
+  createCategory,
+  deleteCategory,
+  fetchArticles,
+  fetchArticle,
+  createArticle,
+  updateArticle,
+  deleteArticle,
+  fetchFAQs,
+  createFAQ,
+  updateFAQ,
+  deleteFAQ,
+  type Category,
+  type Article,
+  type FAQ,
+} from "@/lib/knowledge-service";
 
 export default function KnowledgePage() {
   const [tab, setTab] = useState<"faqs" | "articles">("faqs");
-  const [categories] = useState<Category[]>(defaultCategories);
-  const [faqs, setFaqs] = useState<FAQ[]>(defaultFAQs);
-  const [articles, setArticles] = useState<Article[]>(defaultArticles);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [faqs, setFaqs] = useState<FAQ[]>([]);
+  const [articles, setArticles] = useState<Article[]>([]);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedFaq, setSelectedFaq] = useState<FAQ | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [showAddFaq, setShowAddFaq] = useState(false);
   const [showAddArticle, setShowAddArticle] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
   const [editFaq, setEditFaq] = useState<FAQ | null>(null);
   const [editArticle, setEditArticle] = useState<Article | null>(null);
-  const [faqForm, setFaqForm] = useState({ question: "", answer: "", category: "general" });
-  const [articleForm, setArticleForm] = useState({ title: "", content: "", category: "general" });
+  const [faqForm, setFaqForm] = useState({ question: "", answer: "", category_id: "" });
+  const [articleForm, setArticleForm] = useState({ title: "", content: "", excerpt: "", category_id: "" });
+  const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
+  const [loading, setLoading] = useState(true);
+  const [loadingArticle, setLoadingArticle] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const filteredCategories = selectedCategory
-    ? categories.filter((c) => c.id === selectedCategory)
-    : categories;
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [cats, faqsData, articlesData] = await Promise.all([
+        fetchCategories(),
+        fetchFAQs(selectedCategory ? { category_id: selectedCategory } : undefined),
+        fetchArticles(selectedCategory ? { category_id: selectedCategory } : undefined),
+      ]);
+      setCategories(cats);
+      setFaqs(faqsData);
+      setArticles(articlesData);
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const filteredFaqs = faqs.filter(
     (f) =>
-      (!selectedCategory || f.category === categories.find((c) => c.id === selectedCategory)?.name.toLowerCase()) &&
-      (f.question.toLowerCase().includes(search.toLowerCase()) || f.answer.toLowerCase().includes(search.toLowerCase()))
+      f.question.toLowerCase().includes(search.toLowerCase()) ||
+      f.answer.toLowerCase().includes(search.toLowerCase())
   );
 
   const filteredArticles = articles.filter(
     (a) =>
-      (!selectedCategory || a.category === categories.find((c) => c.id === selectedCategory)?.name.toLowerCase()) &&
-      (a.title.toLowerCase().includes(search.toLowerCase()) || a.content.toLowerCase().includes(search.toLowerCase()))
+      a.title.toLowerCase().includes(search.toLowerCase()) ||
+      (a.excerpt && a.excerpt.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const saveFaq = () => {
+  const handleAddCategory = async () => {
+    if (!categoryForm.name.trim()) return;
+    setSaving(true);
+    try {
+      await createCategory(categoryForm);
+      setShowAddCategory(false);
+      setCategoryForm({ name: "", description: "" });
+      loadData();
+    } catch {} finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    try {
+      await deleteCategory(id);
+      if (selectedCategory === id) setSelectedCategory(null);
+      loadData();
+    } catch {}
+  };
+
+  const saveFaq = async () => {
     if (!faqForm.question.trim() || !faqForm.answer.trim()) return;
-    if (editFaq) {
-      setFaqs(faqs.map((f) => (f.id === editFaq.id ? { ...f, ...faqForm, updatedAt: new Date().toISOString().split("T")[0] } : f)));
-    } else {
-      setFaqs([{ id: `f${Date.now()}`, ...faqForm, updatedAt: new Date().toISOString().split("T")[0] }, ...faqs]);
+    setSaving(true);
+    try {
+      if (editFaq) {
+        await updateFAQ(editFaq.id, {
+          question: faqForm.question,
+          answer: faqForm.answer,
+          category_id: faqForm.category_id || null,
+        });
+      } else {
+        await createFAQ({
+          question: faqForm.question,
+          answer: faqForm.answer,
+          category_id: faqForm.category_id || null,
+        });
+      }
+      setShowAddFaq(false);
+      setEditFaq(null);
+      setFaqForm({ question: "", answer: "", category_id: "" });
+      loadData();
+    } catch {} finally {
+      setSaving(false);
     }
-    setShowAddFaq(false);
-    setEditFaq(null);
-    setFaqForm({ question: "", answer: "", category: "general" });
   };
 
-  const saveArticle = () => {
+  const saveArticle = async () => {
     if (!articleForm.title.trim() || !articleForm.content.trim()) return;
-    if (editArticle) {
-      setArticles(articles.map((a) => (a.id === editArticle.id ? { ...a, ...articleForm, updatedAt: new Date().toISOString().split("T")[0] } : a)));
-    } else {
-      setArticles([{ id: `a${Date.now()}`, ...articleForm, updatedAt: new Date().toISOString().split("T")[0], published: false }, ...articles]);
+    setSaving(true);
+    try {
+      if (editArticle) {
+        await updateArticle(editArticle.id, {
+          title: articleForm.title,
+          content: articleForm.content,
+          excerpt: articleForm.excerpt,
+          category_id: articleForm.category_id || null,
+        });
+      } else {
+        await createArticle({
+          title: articleForm.title,
+          content: articleForm.content,
+          excerpt: articleForm.excerpt,
+          category_id: articleForm.category_id || null,
+        });
+      }
+      setShowAddArticle(false);
+      setEditArticle(null);
+      setArticleForm({ title: "", content: "", excerpt: "", category_id: "" });
+      loadData();
+    } catch {} finally {
+      setSaving(false);
     }
-    setShowAddArticle(false);
-    setEditArticle(null);
-    setArticleForm({ title: "", content: "", category: "general" });
   };
 
-  const deleteFaq = (id: string) => {
-    setFaqs(faqs.filter((f) => f.id !== id));
-    if (selectedFaq?.id === id) setSelectedFaq(null);
+  const handleDeleteFaq = async (id: string) => {
+    try {
+      await deleteFAQ(id);
+      if (selectedFaq?.id === id) setSelectedFaq(null);
+      loadData();
+    } catch {}
   };
 
-  const deleteArticle = (id: string) => {
-    setArticles(articles.filter((a) => a.id !== id));
-    if (selectedArticle?.id === id) setSelectedArticle(null);
+  const handleDeleteArticle = async (id: string) => {
+    try {
+      await deleteArticle(id);
+      if (selectedArticle?.id === id) setSelectedArticle(null);
+      loadData();
+    } catch {}
   };
 
-  const togglePublish = (id: string) => {
-    setArticles(articles.map((a) => (a.id === id ? { ...a, published: !a.published } : a)));
+  const handleTogglePublish = async (article: Article) => {
+    try {
+      const updated = await updateArticle(article.id, { published: !article.published });
+      if (selectedArticle?.id === article.id) setSelectedArticle(updated);
+      loadData();
+    } catch {}
   };
 
   return (
     <div className="flex h-full flex-col md:pl-3">
       <div className="flex flex-1 overflow-hidden bg-card shadow-sm">
+        {/* Categories sidebar */}
         <div className="flex w-full md:w-48 shrink-0 flex-col border-r border-border">
           <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
             <div className="flex items-center gap-1.5">
               <BookOpen className="h-5 w-5 text-accent" />
               <h2 className="text-sm font-semibold text-ink">Categories</h2>
             </div>
+            <button
+              onClick={() => { setCategoryForm({ name: "", description: "" }); setShowAddCategory(true); }}
+              className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors"
+              title="Add category"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
           </div>
           <div className="flex-1 overflow-y-auto p-3">
             <button
@@ -140,25 +218,34 @@ export default function KnowledgePage() {
               </div>
             </button>
             {categories.map((cat) => (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat.id)}
-                className={`mt-1 w-full rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
-                  selectedCategory === cat.id ? "bg-surface-2 font-medium text-ink" : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <ChevronRight className="h-3.5 w-3.5" />
-                    {cat.name}
+              <div key={cat.id} className="group mt-1 flex items-center">
+                <button
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`flex-1 rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
+                    selectedCategory === cat.id ? "bg-surface-2 font-medium text-ink" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{cat.name}</span>
+                    </div>
+                    <span className="text-xs shrink-0 ml-1">{cat.article_count + cat.faq_count}</span>
                   </div>
-                  <span className="text-xs">{cat.articleCount}</span>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={() => handleDeleteCategory(cat.id)}
+                  className="ml-1 shrink-0 rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all"
+                  title="Delete category"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
 
+        {/* Main content */}
         <div className="flex flex-1 flex-col">
           <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
             <div className="flex rounded-lg border border-border p-0.5">
@@ -194,11 +281,11 @@ export default function KnowledgePage() {
                 onClick={() => {
                   if (tab === "faqs") {
                     setEditFaq(null);
-                    setFaqForm({ question: "", answer: "", category: "general" });
+                    setFaqForm({ question: "", answer: "", category_id: "" });
                     setShowAddFaq(true);
                   } else {
                     setEditArticle(null);
-                    setArticleForm({ title: "", content: "", category: "general" });
+                    setArticleForm({ title: "", content: "", excerpt: "", category_id: "" });
                     setShowAddArticle(true);
                   }
                 }}
@@ -211,8 +298,13 @@ export default function KnowledgePage() {
           </div>
 
           <div className="flex flex-1 overflow-hidden">
+            {/* List panel */}
             <div className="flex w-full md:w-80 flex-col overflow-y-auto border-r border-border">
-              {tab === "faqs" ? (
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : tab === "faqs" ? (
                 filteredFaqs.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
                     <HelpCircle className="mb-3 h-10 w-10 text-border" />
@@ -231,56 +323,72 @@ export default function KnowledgePage() {
                         <p className="text-sm font-medium text-ink">{faq.question}</p>
                         <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{faq.answer}</p>
                         <div className="mt-1.5 flex items-center gap-2.5 text-xs text-muted-foreground">
-                          <span className="capitalize">{faq.category}</span>
-                          <span>Updated {faq.updatedAt}</span>
+                          {faq.category && <span className="capitalize">{faq.category.name}</span>}
+                          <span>Updated {new Date(faq.updated_at).toLocaleDateString()}</span>
                         </div>
                       </button>
                     ))}
                   </div>
                 )
+              ) : filteredArticles.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
+                  <FileText className="mb-3 h-10 w-10 text-border" />
+                  <p>No articles found</p>
+                </div>
               ) : (
-                filteredArticles.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 text-sm text-muted-foreground">
-                    <FileText className="mb-3 h-10 w-10 text-border" />
-                    <p>No articles found</p>
-                  </div>
-                ) : (
-                  <div className="p-3 space-y-1">
-                    {filteredArticles.map((article) => (
-                      <button
-                        key={article.id}
-                        onClick={() => setSelectedArticle(article)}
-                        className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
-                          selectedArticle?.id === article.id ? "bg-surface-2" : "hover:bg-surface-2"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-medium text-ink">{article.title}</p>
-                          {article.published ? (
-                            <span className="inline-flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-700">
-                              <Globe className="h-3.5 w-3.5" />
-                              Live
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700">
-                              Draft
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{article.content}</p>
-                        <div className="mt-1.5 flex items-center gap-2.5 text-xs text-muted-foreground">
-                          <span className="capitalize">{article.category}</span>
-                          <span>Updated {article.updatedAt}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )
+                <div className="p-3 space-y-1">
+                  {filteredArticles.map((article) => (
+                    <button
+                      key={article.id}
+                      onClick={async () => {
+                        setLoadingArticle(true);
+                        try {
+                          const full = await fetchArticle(article.id);
+                          setSelectedArticle(full);
+                        } catch {
+                          setSelectedArticle(article);
+                        } finally {
+                          setLoadingArticle(false);
+                        }
+                      }}
+                      className={`w-full rounded-lg px-3 py-2.5 text-left transition-colors ${
+                        selectedArticle?.id === article.id ? "bg-surface-2" : "hover:bg-surface-2"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-ink">{article.title}</p>
+                        {article.published ? (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-green-100 px-1.5 py-0.5 text-[11px] text-green-700">
+                            <Globe className="h-3.5 w-3.5" />
+                            Live
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-amber-100 px-1.5 py-0.5 text-[11px] text-amber-700">
+                            Draft
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{article.excerpt || article.content}</p>
+                      <div className="mt-1.5 flex items-center gap-2.5 text-xs text-muted-foreground">
+                        {article.category && <span className="capitalize">{article.category.name}</span>}
+                        <span>Updated {new Date(article.updated_at).toLocaleDateString()}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
 
+            {/* Detail panel */}
             <div className="flex flex-1 flex-col overflow-y-auto">
-              {tab === "faqs" && selectedFaq ? (
+              {loadingArticle ? (
+                <div className="flex flex-1 items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Loading article...</p>
+                  </div>
+                </div>
+              ) : tab === "faqs" && selectedFaq ? (
                 <div className="p-5">
                   <div className="mb-5 flex items-center justify-between">
                     <h2 className="text-base font-semibold text-ink">{selectedFaq.question}</h2>
@@ -288,7 +396,11 @@ export default function KnowledgePage() {
                       <button
                         onClick={() => {
                           setEditFaq(selectedFaq);
-                          setFaqForm({ question: selectedFaq.question, answer: selectedFaq.answer, category: selectedFaq.category });
+                          setFaqForm({
+                            question: selectedFaq.question,
+                            answer: selectedFaq.answer,
+                            category_id: selectedFaq.category?.id || "",
+                          });
                           setShowAddFaq(true);
                         }}
                         className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground"
@@ -296,19 +408,21 @@ export default function KnowledgePage() {
                         <Edit3 className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => deleteFaq(selectedFaq.id)}
+                        onClick={() => handleDeleteFaq(selectedFaq.id)}
                         className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-red-500"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                   </div>
-                  <div className="mb-4 flex items-center gap-2.5 text-xs text-muted-foreground">
-                    <span className="rounded bg-accent/10 px-1.5 py-0.5 capitalize text-accent">{selectedFaq.category}</span>
-                    <span>Updated {selectedFaq.updatedAt}</span>
-                  </div>
+                  {selectedFaq.category && (
+                    <div className="mb-4 flex items-center gap-2.5 text-xs text-muted-foreground">
+                      <span className="rounded bg-accent/10 px-1.5 py-0.5 capitalize text-accent">{selectedFaq.category.name}</span>
+                      <span>Updated {new Date(selectedFaq.updated_at).toLocaleDateString()}</span>
+                    </div>
+                  )}
                   <div className="rounded-lg border border-border bg-surface p-5">
-                    <p className="text-sm text-ink leading-relaxed">{selectedFaq.answer}</p>
+                    <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{selectedFaq.answer}</p>
                   </div>
                 </div>
               ) : tab === "articles" && selectedArticle ? (
@@ -317,7 +431,7 @@ export default function KnowledgePage() {
                     <h2 className="text-base font-semibold text-ink">{selectedArticle.title}</h2>
                     <div className="flex items-center gap-1.5">
                       <button
-                        onClick={() => togglePublish(selectedArticle.id)}
+                        onClick={() => handleTogglePublish(selectedArticle)}
                         className={`rounded-md border px-2.5 py-2 text-xs font-medium transition-colors ${
                           selectedArticle.published
                             ? "border-border text-muted-foreground hover:text-foreground"
@@ -329,7 +443,12 @@ export default function KnowledgePage() {
                       <button
                         onClick={() => {
                           setEditArticle(selectedArticle);
-                          setArticleForm({ title: selectedArticle.title, content: selectedArticle.content, category: selectedArticle.category });
+                          setArticleForm({
+                            title: selectedArticle.title,
+                            content: selectedArticle.content,
+                            excerpt: selectedArticle.excerpt,
+                            category_id: selectedArticle.category?.id || "",
+                          });
                           setShowAddArticle(true);
                         }}
                         className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-foreground"
@@ -337,7 +456,7 @@ export default function KnowledgePage() {
                         <Edit3 className="h-4 w-4" />
                       </button>
                       <button
-                        onClick={() => deleteArticle(selectedArticle.id)}
+                        onClick={() => handleDeleteArticle(selectedArticle.id)}
                         className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-red-500"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -345,12 +464,14 @@ export default function KnowledgePage() {
                     </div>
                   </div>
                   <div className="mb-4 flex items-center gap-2.5 text-xs text-muted-foreground">
-                    <span className="rounded bg-accent/10 px-1.5 py-0.5 capitalize text-accent">{selectedArticle.category}</span>
+                    {selectedArticle.category && (
+                      <span className="rounded bg-accent/10 px-1.5 py-0.5 capitalize text-accent">{selectedArticle.category.name}</span>
+                    )}
                     <span className="flex items-center gap-0.5">
                       {selectedArticle.published ? <Globe className="h-3.5 w-3.5 text-green-600" /> : <Eye className="h-3.5 w-3.5 text-amber-600" />}
                       {selectedArticle.published ? "Published" : "Draft"}
                     </span>
-                    <span>Updated {selectedArticle.updatedAt}</span>
+                    <span>Updated {new Date(selectedArticle.updated_at).toLocaleDateString()}</span>
                   </div>
                   <div className="rounded-lg border border-border bg-surface p-5">
                     <p className="text-sm text-ink leading-relaxed whitespace-pre-wrap">{selectedArticle.content}</p>
@@ -375,6 +496,52 @@ export default function KnowledgePage() {
         </div>
       </div>
 
+      {/* Add Category Modal */}
+      {showAddCategory && (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowAddCategory(false)} />
+          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-lg">
+            <div className="mb-5 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-ink">Add Category</h3>
+              <button onClick={() => setShowAddCategory(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Name</label>
+                <input
+                  type="text"
+                  value={categoryForm.name}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })}
+                  placeholder="e.g. Getting Started"
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Description</label>
+                <input
+                  type="text"
+                  value={categoryForm.description}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                  placeholder="Optional description"
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2.5">
+              <button onClick={() => setShowAddCategory(false)} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
+                Cancel
+              </button>
+              <button onClick={handleAddCategory} disabled={!categoryForm.name.trim() || saving} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Category"}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Add/Edit FAQ Modal */}
       {showAddFaq && (
         <>
           <div className="fixed inset-0 z-40 bg-black/20" onClick={() => { setShowAddFaq(false); setEditFaq(null); }} />
@@ -409,15 +576,14 @@ export default function KnowledgePage() {
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Category</label>
                 <select
-                  value={faqForm.category}
-                  onChange={(e) => setFaqForm({ ...faqForm, category: e.target.value })}
+                  value={faqForm.category_id}
+                  onChange={(e) => setFaqForm({ ...faqForm, category_id: e.target.value })}
                   className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none"
                 >
-                  <option value="general">General</option>
-                  <option value="getting-started">Getting Started</option>
-                  <option value="account">Account & Billing</option>
-                  <option value="features">Features</option>
-                  <option value="troubleshooting">Troubleshooting</option>
+                  <option value="">No category</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -425,14 +591,15 @@ export default function KnowledgePage() {
               <button onClick={() => { setShowAddFaq(false); setEditFaq(null); }} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
                 Cancel
               </button>
-              <button onClick={saveFaq} disabled={!faqForm.question.trim() || !faqForm.answer.trim()} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40">
-                {editFaq ? "Save Changes" : "Add FAQ"}
+              <button onClick={saveFaq} disabled={!faqForm.question.trim() || !faqForm.answer.trim() || saving} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editFaq ? "Save Changes" : "Add FAQ"}
               </button>
             </div>
           </div>
         </>
       )}
 
+      {/* Add/Edit Article Modal */}
       {showAddArticle && (
         <>
           <div className="fixed inset-0 z-40 bg-black/20" onClick={() => { setShowAddArticle(false); setEditArticle(null); }} />
@@ -455,6 +622,16 @@ export default function KnowledgePage() {
                 />
               </div>
               <div>
+                <label className="text-xs font-medium text-muted-foreground">Excerpt</label>
+                <input
+                  type="text"
+                  value={articleForm.excerpt}
+                  onChange={(e) => setArticleForm({ ...articleForm, excerpt: e.target.value })}
+                  placeholder="Short summary for previews (optional)"
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <div>
                 <label className="text-xs font-medium text-muted-foreground">Content</label>
                 <textarea
                   value={articleForm.content}
@@ -467,15 +644,14 @@ export default function KnowledgePage() {
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Category</label>
                 <select
-                  value={articleForm.category}
-                  onChange={(e) => setArticleForm({ ...articleForm, category: e.target.value })}
+                  value={articleForm.category_id}
+                  onChange={(e) => setArticleForm({ ...articleForm, category_id: e.target.value })}
                   className="mt-1.5 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none"
                 >
-                  <option value="general">General</option>
-                  <option value="getting-started">Getting Started</option>
-                  <option value="account">Account & Billing</option>
-                  <option value="features">Features</option>
-                  <option value="troubleshooting">Troubleshooting</option>
+                  <option value="">No category</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -483,8 +659,8 @@ export default function KnowledgePage() {
               <button onClick={() => { setShowAddArticle(false); setEditArticle(null); }} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
                 Cancel
               </button>
-              <button onClick={saveArticle} disabled={!articleForm.title.trim() || !articleForm.content.trim()} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40">
-                {editArticle ? "Save Changes" : "Add Article"}
+              <button onClick={saveArticle} disabled={!articleForm.title.trim() || !articleForm.content.trim() || saving} className="rounded-md bg-ink px-3 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-40">
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editArticle ? "Save Changes" : "Add Article"}
               </button>
             </div>
           </div>

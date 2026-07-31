@@ -7,4 +7,5 @@ urlpatterns = [
     path("api/", include("workspace.urls")),
     path("api/", include("conversations.urls")),
     path("api/", include("teams.urls")),
+    path("api/", include("knowledge_base.urls")),
 ]
