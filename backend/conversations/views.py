@@ -1,6 +1,7 @@
 import uuid
 from django.utils import timezone
 from django.contrib.auth import get_user_model
+from django.db.models import Count
 from rest_framework import status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -33,7 +34,7 @@ def list_conversations(request):
     if not org:
         return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
 
-    conversations = Conversation.objects.filter(organization=org).select_related("assignee")
+    conversations = Conversation.objects.filter(organization=org).select_related("assignee", "team")
 
     status_filter = request.query_params.get("status")
     if status_filter and status_filter in ("open", "pending", "closed"):
@@ -65,9 +66,9 @@ def list_conversations(request):
     })
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([permissions.IsAuthenticated])
-def get_conversation(request, pk):
+def conversation_detail(request, pk):
     org = get_user_org(request.user)
     if not org:
         return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
@@ -77,8 +78,23 @@ def get_conversation(request, pk):
     except Conversation.DoesNotExist:
         return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    serializer = ConversationDetailSerializer(conversation)
-    return Response(serializer.data)
+    if request.method == "GET":
+        serializer = ConversationDetailSerializer(conversation)
+        return Response(serializer.data)
+
+    if request.method == "DELETE":
+        conversation.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # PATCH
+    serializer = ConversationUpdateSerializer(data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+
+    for key, value in serializer.validated_data.items():
+        setattr(conversation, key, value)
+    conversation.save(update_fields=list(serializer.validated_data.keys()))
+
+    return Response(ConversationDetailSerializer(conversation).data)
 
 
 @api_view(["POST"])
@@ -110,28 +126,6 @@ def create_message(request, pk):
     return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
 
-@api_view(["PATCH"])
-@permission_classes([permissions.IsAuthenticated])
-def update_conversation(request, pk):
-    org = get_user_org(request.user)
-    if not org:
-        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
-
-    try:
-        conversation = Conversation.objects.get(pk=pk, organization=org)
-    except Conversation.DoesNotExist:
-        return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
-
-    serializer = ConversationUpdateSerializer(data=request.data, partial=True)
-    serializer.is_valid(raise_exception=True)
-
-    for key, value in serializer.validated_data.items():
-        setattr(conversation, key, value)
-    conversation.save(update_fields=list(serializer.validated_data.keys()))
-
-    return Response(ConversationDetailSerializer(conversation).data)
-
-
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def assign_conversation(request, pk):
@@ -144,17 +138,82 @@ def assign_conversation(request, pk):
     except Conversation.DoesNotExist:
         return Response({"detail": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
 
+    from teams.models import Team, TeamMembership
+
     assignee_id = request.data.get("assignee_id")
+    team_id = request.data.get("team_id")
+
+    # Assign team
+    if team_id is not None:
+        if team_id == "":
+            conversation.team = None
+            conversation.save(update_fields=["team"])
+        else:
+            try:
+                team = Team.objects.get(pk=team_id, organization=org)
+                conversation.team = team
+
+                # Auto-assign: if no assignee_id provided, pick least busy team member
+                if not assignee_id:
+                    team_member_ids = TeamMembership.objects.filter(
+                        team=team, role="member"
+                    ).values_list("user_id", flat=True)
+
+                    # Also include team admins
+                    team_admin_ids = TeamMembership.objects.filter(
+                        team=team, role="admin"
+                    ).values_list("user_id", flat=True)
+
+                    all_member_ids = list(set(list(team_member_ids) + list(team_admin_ids)))
+
+                    if all_member_ids:
+                        # Find member with fewest active conversations
+                        member_conversation_counts = (
+                            Conversation.objects.filter(
+                                assignee_id__in=all_member_ids,
+                                status__in=["open", "pending"],
+                            )
+                            .values("assignee_id")
+                            .annotate(count=Count("id"))
+                            .order_by("count")
+                        )
+                        assigned_ids = {c["assignee_id"] for c in member_conversation_counts}
+                        for mid in all_member_ids:
+                            if mid not in assigned_ids:
+                                conversation.assignee_id = mid
+                                break
+                        else:
+                            # All members have conversations, pick the one with fewest
+                            if member_conversation_counts:
+                                conversation.assignee_id = member_conversation_counts[0]["assignee_id"]
+
+                conversation.save(update_fields=["team", "assignee"])
+            except Team.DoesNotExist:
+                return Response({"detail": "Team not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Assign individual member (overrides auto-assign)
     if assignee_id:
         try:
             assignee = User.objects.get(pk=assignee_id, memberships__organization=org, memberships__status="active")
             conversation.assignee = assignee
+
+            # Auto-detect team from agent's membership if no team was explicitly set
+            if not team_id and not conversation.team_id:
+                agent_team = TeamMembership.objects.filter(
+                    user=assignee, team__organization=org
+                ).select_related("team").first()
+                if agent_team:
+                    conversation.team = agent_team.team
+
         except User.DoesNotExist:
             return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
-    else:
-        conversation.assignee = request.user
+    elif assignee_id == "" and not team_id:
+        # Explicitly unassign
+        conversation.assignee = None
 
-    conversation.save(update_fields=["assignee"])
+    if assignee_id or assignee_id == "":
+        conversation.save(update_fields=["assignee", "team"])
+
     return Response(ConversationDetailSerializer(conversation).data)
 
 
@@ -175,3 +234,17 @@ def list_agents(request):
     from accounts.serializers import UserSerializer
 
     return Response(UserSerializer(agents, many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def list_teams(request):
+    from teams.models import Team
+
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    teams = Team.objects.filter(organization=org).order_by("name")
+    data = [{"id": str(t.id), "name": t.name, "description": t.description} for t in teams]
+    return Response(data)

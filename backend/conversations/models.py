@@ -34,10 +34,14 @@ class Conversation(models.Model):
     customer_name = models.CharField(max_length=255, blank=True, default="")
     customer_email = models.EmailField(blank=True, default="")
     customer_avatar = models.URLField(blank=True, default="")
+    session_token = models.CharField(max_length=64, blank=True, default="", db_index=True)
     browser = models.JSONField(blank=True, default=dict)
     location = models.CharField(max_length=255, blank=True, default="")
     assignee = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_conversations"
+    )
+    team = models.ForeignKey(
+        "teams.Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
     )
     last_message_at = models.DateTimeField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)

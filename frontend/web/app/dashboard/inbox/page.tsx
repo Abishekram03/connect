@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Send, Phone, Mail, MoreHorizontal, Loader2, ChevronDown, ChevronRight, UserCheck, StickyNote, Paperclip, Sparkles, Smile, Bot, MessageSquare, FileText, Globe, Clock, Monitor, Tag, Languages, Archive, Star, Trash2, UserPlus } from "lucide-react";
+import { Search, Send, Phone, Mail, MoreHorizontal, Loader2, ChevronDown, ChevronRight, UserCheck, StickyNote, Paperclip, Sparkles, Smile, Bot, MessageSquare, FileText, Globe, Clock, Monitor, Tag, Languages, Archive, Star, Trash2, UserPlus, Hash } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -9,12 +9,15 @@ import {
   fetchPastConversations,
   sendMessage,
   updateConversation,
+  deleteConversation,
   assignConversation,
   fetchAgents,
+  fetchTeamsList,
   type Conversation,
   type ConversationDetail,
   type Message,
   type Agent,
+  type Team,
 } from "@/lib/conversations-service";
 
 type FilterKey = "all" | "assigned" | "unassigned" | "closed";
@@ -31,6 +34,7 @@ export default function InboxPage() {
   const [msgType, setMsgType] = useState<"reply" | "note">("reply");
   const [sending, setSending] = useState(false);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showDetails, setShowDetails] = useState(true);
@@ -62,6 +66,7 @@ export default function InboxPage() {
   useEffect(() => {
     loadConversations();
     fetchAgents().then(setAgents).catch(() => {});
+    fetchTeamsList().then(setTeams).catch(() => {});
   }, [filter]);
 
   useEffect(() => {
@@ -79,7 +84,7 @@ export default function InboxPage() {
       if (filter === "assigned") params.assignee = "me";
       else if (filter === "unassigned") params.assignee = "unassigned";
       else if (filter === "closed") params.status = "closed";
-      else params.status = "open";
+      // "all" — no status filter, show everything
       const res = await fetchConversations(params);
       setConversations(res.results);
     } catch {
@@ -128,7 +133,16 @@ export default function InboxPage() {
   const handleAssign = async (assigneeId?: string) => {
     if (!activeId) return;
     try {
-      const updated = await assignConversation(activeId, assigneeId);
+      const updated = await assignConversation(activeId, assigneeId, activeConvo?.team?.id || undefined);
+      setActiveConvo(updated);
+      loadConversations();
+    } catch {}
+  };
+
+  const handleTeamChange = async (teamId?: string) => {
+    if (!activeId) return;
+    try {
+      const updated = await assignConversation(activeId, undefined, teamId || undefined);
       setActiveConvo(updated);
       loadConversations();
     } catch {}
@@ -148,6 +162,18 @@ export default function InboxPage() {
     try {
       const updated = await updateConversation(activeId, { priority });
       setActiveConvo(updated);
+      loadConversations();
+    } catch {}
+  };
+
+  const handleDelete = async () => {
+    if (!activeId) return;
+    try {
+      await deleteConversation(activeId);
+      setActiveId(null);
+      setActiveConvo(null);
+      setMessages([]);
+      setMoreOpen(false);
       loadConversations();
     } catch {}
   };
@@ -351,6 +377,11 @@ export default function InboxPage() {
                           {c.assignee.name}
                         </span>
                       )}
+                      {c.team && (
+                        <span className="rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                          {c.team.name}
+                        </span>
+                      )}
                       <span className="ml-auto text-[10px] text-muted-foreground">
                         {c.last_message ? formatTime(c.last_message.created_at) : ""}
                       </span>
@@ -538,7 +569,7 @@ export default function InboxPage() {
                             Star
                           </button>
                           <div className="mx-2 my-1 border-t border-border" />
-                          <button className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left text-red-500 hover:bg-red-50 transition-colors">
+                          <button onClick={handleDelete} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-left text-red-500 hover:bg-red-50 transition-colors">
                             <Trash2 className="h-3.5 w-3.5" />
                             Delete
                           </button>
@@ -752,7 +783,7 @@ export default function InboxPage() {
             </div>
 
             {detailTab === "details" ? (
-              <DetailsContent activeConvo={activeConvo} formatTime={formatTime} />
+              <DetailsContent activeConvo={activeConvo} formatTime={formatTime} teams={teams} agents={agents} onTeamChange={handleTeamChange} onAssign={handleAssign} />
             ) : (
               /* Copilot tab */
               <div className="flex flex-1 flex-col">
@@ -836,9 +867,17 @@ export default function InboxPage() {
   );
 }
 
-function DetailsContent({ activeConvo, formatTime }: { activeConvo: ConversationDetail; formatTime: (iso: string) => string }) {
+function DetailsContent({ activeConvo, formatTime, teams, agents, onTeamChange, onAssign }: {
+  activeConvo: ConversationDetail;
+  formatTime: (iso: string) => string;
+  teams: Team[];
+  agents: Agent[];
+  onTeamChange: (teamId?: string) => void;
+  onAssign: (assigneeId?: string) => void;
+}) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     conversation: true,
+    assignment: true,
     contact: true,
     notes: false,
     timeline: true,
@@ -923,6 +962,17 @@ function DetailsContent({ activeConvo, formatTime }: { activeConvo: Conversation
                 </span>
               </div>
               <div className="flex items-center justify-between">
+                {label("ID")}
+                <button
+                  onClick={() => { navigator.clipboard.writeText(activeConvo.id); }}
+                  className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-ink transition-colors font-mono truncate max-w-[65%]"
+                  title="Click to copy"
+                >
+                  <Hash className="h-3 w-3 shrink-0" />
+                  {activeConvo.id.slice(0, 8)}...
+                </button>
+              </div>
+              <div className="flex items-center justify-between">
                 {label("Priority")}
                 <span className="flex items-center gap-1.5 text-xs font-medium text-ink">
                   <span className={`inline-block h-1.5 w-1.5 rounded-full ${priorityDot(activeConvo.priority)}`} />
@@ -943,11 +993,52 @@ function DetailsContent({ activeConvo, formatTime }: { activeConvo: Conversation
                 {label("Messages")}
                 <span className="text-xs font-medium text-ink">{activeConvo.message_count}</span>
               </div>
-              {activeConvo.assignee && (
-                <div className="flex items-center justify-between">
-                  {label("Assignee")}
-                  <span className="text-xs font-medium text-ink">{activeConvo.assignee.name || activeConvo.assignee.email}</span>
-                </div>
+            </div>
+          )}
+        </div>
+
+        {/* Assignment */}
+        <div>
+          <button
+            onClick={() => toggle("assignment")}
+            className="flex w-full items-center gap-1.5 px-3 py-2.5 text-left text-xs font-semibold text-ink hover:bg-surface-2 transition-colors"
+          >
+            <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${openGroups.assignment ? "rotate-90" : ""}`} />
+            <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+            Assignment
+          </button>
+          {openGroups.assignment && (
+            <div className="px-3 pb-3 space-y-3">
+              <div>
+                <p className="mb-1 text-[11px] font-medium text-muted-foreground/60">Team</p>
+                <select
+                  value={activeConvo.team?.id || ""}
+                  onChange={(e) => onTeamChange(e.target.value || undefined)}
+                  className="w-full rounded-md border border-border bg-white px-2.5 py-1.5 text-xs text-ink outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="">No team</option>
+                  {teams.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <p className="mb-1 text-[11px] font-medium text-muted-foreground/60">Assignee</p>
+                <select
+                  value={activeConvo.assignee?.id || ""}
+                  onChange={(e) => onAssign(e.target.value || undefined)}
+                  className="w-full rounded-md border border-border bg-white px-2.5 py-1.5 text-xs text-ink outline-none focus:ring-1 focus:ring-accent"
+                >
+                  <option value="">Unassigned</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>{a.name || a.email}</option>
+                  ))}
+                </select>
+              </div>
+              {activeConvo.team && (
+                <p className="text-[10px] text-muted-foreground">
+                  Auto-assigns the least busy team member
+                </p>
               )}
             </div>
           )}

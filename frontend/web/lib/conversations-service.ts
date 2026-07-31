@@ -1,5 +1,11 @@
 import { api } from "./api-client";
 
+export interface Team {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface Conversation {
   id: string;
   status: "open" | "pending" | "closed";
@@ -10,6 +16,7 @@ export interface Conversation {
   customer_email: string;
   customer_avatar: string;
   assignee: { id: string; email: string; name: string } | null;
+  team: Team | null;
   last_message: { id: string; body: string; created_at: string; is_from_customer: boolean } | null;
   message_count: number;
   last_message_at: string;
@@ -73,17 +80,27 @@ export async function updateConversation(
   return api.patch(`/api/conversations/${conversationId}`, data);
 }
 
+export async function deleteConversation(conversationId: string): Promise<void> {
+  return api.delete(`/api/conversations/${conversationId}`);
+}
+
 export async function assignConversation(
   conversationId: string,
-  assigneeId?: string
+  assigneeId?: string,
+  teamId?: string
 ): Promise<ConversationDetail> {
   return api.post(`/api/conversations/${conversationId}/assign`, {
     assignee_id: assigneeId,
+    team_id: teamId,
   });
 }
 
 export async function fetchAgents(): Promise<Agent[]> {
   return api.get("/api/agents");
+}
+
+export async function fetchTeamsList(): Promise<Team[]> {
+  return api.get("/api/teams-list");
 }
 
 export async function fetchPastConversations(customerEmail: string, currentId: string): Promise<Conversation[]> {

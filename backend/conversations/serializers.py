@@ -22,8 +22,15 @@ class MessageCreateSerializer(serializers.Serializer):
     type = serializers.ChoiceField(choices=["reply", "note"], default="reply")
 
 
+class TeamMinimalSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    description = serializers.CharField(allow_blank=True, default="")
+
+
 class ConversationListSerializer(serializers.ModelSerializer):
     assignee = UserSerializer(read_only=True)
+    team = TeamMinimalSerializer(read_only=True)
     last_message = serializers.SerializerMethodField()
     message_count = serializers.SerializerMethodField()
 
@@ -32,7 +39,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "status", "priority", "channel", "subject",
             "customer_name", "customer_email", "customer_avatar",
-            "assignee", "last_message", "message_count",
+            "assignee", "team", "last_message", "message_count",
             "last_message_at", "created_at", "updated_at",
         ]
 
@@ -48,6 +55,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
 
 class ConversationDetailSerializer(serializers.ModelSerializer):
     assignee = UserSerializer(read_only=True)
+    team = TeamMinimalSerializer(read_only=True)
     messages = MessageSerializer(many=True, read_only=True)
 
     class Meta:
