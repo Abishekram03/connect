@@ -1,5 +1,16 @@
 const API_BASE = "http://127.0.0.1:8000";
 
+function getSessionToken(orgId: string): string {
+  if (typeof window === "undefined") return "";
+  const key = `connect_contact_session_token_${orgId}`;
+  let token = localStorage.getItem(key);
+  if (!token) {
+    token = crypto.randomUUID();
+    localStorage.setItem(key, token);
+  }
+  return token;
+}
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -25,6 +36,8 @@ export interface WidgetConfigResponse {
   autoGreetDelay: number;
   collectEmail: boolean;
   helpCenterEnabled: boolean;
+  showFaqsOnHome: boolean;
+  faqsDisplayCount: number;
 }
 
 export interface ConversationResponse {
@@ -54,7 +67,11 @@ export function startConversation(organizationId: string, data?: {
 }): Promise<ConversationResponse> {
   return api("/api/widget/conversations", {
     method: "POST",
-    body: JSON.stringify({ organization_id: organizationId, ...data }),
+    body: JSON.stringify({
+      organization_id: organizationId,
+      session_token: getSessionToken(organizationId),
+      ...data,
+    }),
   });
 }
 
@@ -74,7 +91,10 @@ export interface ConversationListItem {
 export function fetchConversations(email: string, orgId?: string): Promise<ConversationListItem[]> {
   const params = new URLSearchParams();
   if (email) params.set("email", email);
-  if (orgId) params.set("organization_id", orgId);
+  if (orgId) {
+    params.set("organization_id", orgId);
+    params.set("session_token", getSessionToken(orgId));
+  }
   return api(`/api/widget/conversations?${params.toString()}`);
 }
 
@@ -88,4 +108,40 @@ export function sendMessage(conversationId: string, body: string): Promise<Messa
 export function fetchMessages(conversationId: string, since?: string): Promise<MessageResponse[]> {
   const params = since ? `?since=${encodeURIComponent(since)}` : "";
   return api(`/api/widget/conversations/${conversationId}/messages${params}`);
+}
+
+// ─── Help Center ──────────────────────────────────────────
+
+export interface HelpCenterCategory {
+  id: string;
+  name: string;
+  description: string;
+  article_count: number;
+  faq_count: number;
+}
+
+export interface HelpCenterArticle {
+  id: string;
+  title: string;
+  excerpt: string;
+  content: string;
+  category_name: string;
+  updated_at: string;
+}
+
+export interface HelpCenterFaq {
+  id: string;
+  question: string;
+  answer: string;
+  category_name: string;
+}
+
+export interface HelpCenterResponse {
+  categories: HelpCenterCategory[];
+  articles: HelpCenterArticle[];
+  faqs: HelpCenterFaq[];
+}
+
+export function fetchHelpCenter(organizationId: string): Promise<HelpCenterResponse> {
+  return api(`/api/widget/help-center?organization_id=${encodeURIComponent(organizationId)}`);
 }

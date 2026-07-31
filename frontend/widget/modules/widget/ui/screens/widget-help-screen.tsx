@@ -2,28 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ArrowLeft, ChevronRight, Layers } from "lucide-react";
+import { ArrowLeft, ChevronRight, Layers, Loader2 } from "lucide-react";
 import {
   screenAtom,
   widgetConfigAtom,
+  organizationIdAtom,
   footerVisibleAtom,
   articleOpenAtom,
 } from "../../atoms/widget-atoms";
+import {
+  fetchHelpCenter,
+  type HelpCenterCategory,
+  type HelpCenterArticle,
+} from "../../../../lib/widget-api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-interface HelpCollection {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-interface HelpArticle {
-  id: string;
-  title: string;
-  excerpt?: string | null;
-  content: string;
-}
 
 interface Props {
   mode?: "preview" | "production";
@@ -36,13 +29,36 @@ export const WidgetHelpScreen = ({
   const setScreen = useSetAtom(screenAtom);
   const setFooterVisible = useSetAtom(footerVisibleAtom);
   const setArticleOpen = useSetAtom(articleOpenAtom);
+  const organizationId = useAtomValue(organizationIdAtom);
 
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
   const [activeArticleId, setActiveArticleId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  const collections: HelpCollection[] = [];
-  const articles: HelpArticle[] = [];
+  const [categories, setCategories] = useState<HelpCenterCategory[]>([]);
+  const [articles, setArticles] = useState<HelpCenterArticle[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    setLoading(true);
+    fetchHelpCenter(organizationId)
+      .then((data) => {
+        setCategories(data.categories);
+        setArticles(data.articles);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [organizationId]);
+
+  const collections = categories;
+
+  const articlesForCollection = useMemo(() => {
+    if (!activeCollectionId) return [];
+    const cat = collections.find((c) => c.id === activeCollectionId);
+    if (!cat) return [];
+    return articles.filter((a) => a.category_name === cat.name);
+  }, [articles, collections, activeCollectionId]);
 
   const selectedCollection = collections.find((c) => c.id === activeCollectionId) || null;
   const selectedArticle = articles.find((a) => a.id === activeArticleId) || null;
@@ -56,12 +72,13 @@ export const WidgetHelpScreen = ({
   }, [collections, searchTerm]);
 
   const filteredArticles = useMemo(() => {
-    if (!searchTerm.trim()) return articles;
+    const source = activeCollectionId ? articlesForCollection : articles;
+    if (!searchTerm.trim()) return source;
     const term = searchTerm.toLowerCase();
-    return articles.filter(
+    return source.filter(
       (a) => a.title.toLowerCase().includes(term) || (a.excerpt || "").toLowerCase().includes(term),
     );
-  }, [articles, searchTerm]);
+  }, [articles, articlesForCollection, activeCollectionId, searchTerm]);
 
   const accentColor = widgetConfig.primaryColor || "#2563eb";
 
@@ -91,6 +108,15 @@ export const WidgetHelpScreen = ({
     }
     setScreen("selection");
   };
+
+  if (loading) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-white">
+        <Loader2 className="h-6 w-6 animate-spin text-neutral-400" />
+        <p className="mt-2 text-sm text-neutral-500">Loading help center...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex h-full flex-col bg-white">
@@ -134,30 +160,33 @@ export const WidgetHelpScreen = ({
               {filteredCollections.length === 0 ? (
                 <div className="p-4 text-sm text-neutral-500">No collections available.</div>
               ) : (
-                filteredCollections.map((collection) => (
-                  <button
-                    key={collection.id}
-                    className="flex w-full items-start justify-between gap-2 px-3 py-3 text-left transition-colors hover:bg-neutral-50"
-                    onClick={() => {
-                      setActiveCollectionId(collection.id);
-                      setActiveArticleId(null);
-                    }}
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-neutral-900">{collection.name}</p>
-                      {collection.description && (
-                        <p className="text-xs text-neutral-600">{collection.description}</p>
-                      )}
-                    </div>
-                    <span
-                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
-                      style={{ backgroundColor: `${accentColor}1A`, color: accentColor }}
+                filteredCollections.map((collection) => {
+                  const articleCount = articles.filter((a) => a.category_name === collection.name).length;
+                  return (
+                    <button
+                      key={collection.id}
+                      className="flex w-full items-start justify-between gap-2 px-3 py-3 text-left transition-colors hover:bg-neutral-50"
+                      onClick={() => {
+                        setActiveCollectionId(collection.id);
+                        setActiveArticleId(null);
+                      }}
                     >
-                      Open
-                      <ChevronRight className="h-3 w-3" />
-                    </span>
-                  </button>
-                ))
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-neutral-900">{collection.name}</p>
+                        {collection.description && (
+                          <p className="text-xs text-neutral-600">{collection.description}</p>
+                        )}
+                      </div>
+                      <span
+                        className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                        style={{ backgroundColor: `${accentColor}1A`, color: accentColor }}
+                      >
+                        {articleCount} {articleCount === 1 ? "article" : "articles"}
+                        <ChevronRight className="h-3 w-3" />
+                      </span>
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>
@@ -176,10 +205,10 @@ export const WidgetHelpScreen = ({
                 </button>
                 <div className="flex flex-col">
                   <p className="text-sm font-semibold text-neutral-900">{selectedCollection?.name}</p>
-                  <p className="text-[11px] text-neutral-500">{selectedCollection?.description || `${articles.length} articles`}</p>
+                  <p className="text-[11px] text-neutral-500">{selectedCollection?.description || `${filteredArticles.length} articles`}</p>
                 </div>
               </div>
-              <span className="text-[11px] text-neutral-500">{articles.length} articles</span>
+              <span className="text-[11px] text-neutral-500">{filteredArticles.length} articles</span>
             </div>
 
             <div className="divide-y divide-neutral-100">

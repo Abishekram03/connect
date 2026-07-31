@@ -19,7 +19,7 @@ import { detectIntent } from "../../../../lib/intent-detection";
 import { GreetingMessage } from "../components/greeting-message";
 import { ConcernMessage } from "../components/concern-message";
 import { DataCollectionForm } from "../components/data-collection-form";
-import { startConversation, sendMessage, fetchMessages, type MessageResponse } from "../../../../lib/widget-api";
+import { startConversation, sendMessage, fetchMessages, fetchConversations, type MessageResponse } from "../../../../lib/widget-api";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), {
   ssr: false,
@@ -40,6 +40,7 @@ export const WidgetChatScreen = ({
   const isHistorical = useAtomValue(isHistoricalConversationAtom);
   const setContactName = useSetAtom(contactNameAtomFamily(orgId || ""));
   const setContactEmail = useSetAtom(contactEmailAtomFamily(orgId || ""));
+  const storedEmail = useAtomValue(contactEmailAtomFamily(orgId || ""));
 
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -111,17 +112,42 @@ export const WidgetChatScreen = ({
   useEffect(() => {
     if (gdprStage !== "chat" || convStartedRef.current || !userFirstMessage || !orgId) return;
     convStartedRef.current = true;
-    startConversation(orgId, {
-      customer_name: customerName || undefined,
-      customer_email: customerEmail || undefined,
-      subject: userFirstMessage,
-    }).then(async (conv) => {
+
+    const email = customerEmail || storedEmail || "";
+
+    const init = async () => {
+      // Check for existing open conversation for this email+org
+      if (email) {
+        try {
+          const existing = await fetchConversations(email, orgId);
+          if (existing.length > 0) {
+            const conv = existing[0];
+            setConversationId(conv.id);
+            // Load existing messages
+            const msgs = await fetchMessages(conv.id);
+            setMessages(msgs);
+            if (msgs.length > 0) {
+              lastTimestampRef.current = msgs[msgs.length - 1].created_at;
+            }
+            return;
+          }
+        } catch {}
+      }
+
+      // No existing conversation — create new one
+      const conv = await startConversation(orgId, {
+        customer_name: customerName || undefined,
+        customer_email: email || undefined,
+        subject: userFirstMessage,
+      });
       setConversationId(conv.id);
       const msg = await sendMessage(conv.id, userFirstMessage);
       setMessages([msg]);
       lastTimestampRef.current = msg.created_at;
-    });
-  }, [gdprStage, orgId, userFirstMessage, customerName, customerEmail]);
+    };
+
+    init();
+  }, [gdprStage, orgId, userFirstMessage, customerName, customerEmail, storedEmail]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -171,10 +197,11 @@ export const WidgetChatScreen = ({
   const handleDataCollectionSubmit = async (data: { name: string; email: string; consentGiven: boolean }) => {
     setIsCreatingLead(true);
     try {
-      setCustomerName(data.name);
-      setCustomerEmail(data.email);
-      if (data.name) setContactName(data.name);
-      if (data.email) setContactEmail(data.email);
+      const normalizedEmail = data.email.trim().toLowerCase();
+      setCustomerName(data.name.trim());
+      setCustomerEmail(normalizedEmail);
+      if (data.name) setContactName(data.name.trim());
+      if (normalizedEmail) setContactEmail(normalizedEmail);
       setGdprStage("confirmed");
     } catch {} finally {
       setIsCreatingLead(false);

@@ -54,6 +54,8 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
         autoGreetDelay: cfg.autoGreetDelay,
         collectEmail: cfg.collectEmail,
         helpCenterEnabled: cfg.helpCenterEnabled,
+        showFaqsOnHome: cfg.showFaqsOnHome,
+        faqsDisplayCount: cfg.faqsDisplayCount,
       }));
     }).catch(() => {});
   }, [organizationId, setWidgetConfig]);

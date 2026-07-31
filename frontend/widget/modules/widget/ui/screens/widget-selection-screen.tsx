@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@connect/ui/components/button";
 import { Icon } from "@iconify/react";
 import { ListChecks, X, Inbox } from "lucide-react";
@@ -12,6 +12,7 @@ import {
   isAiConversationAtom,
   contactEmailAtomFamily,
 } from "../../atoms/widget-atoms";
+import { fetchHelpCenter, type HelpCenterFaq } from "../../../../lib/widget-api";
 
 interface Props {
   mode?: "preview" | "production";
@@ -28,8 +29,16 @@ export const WidgetSelectionScreen = ({
   const organizationId = useAtomValue(organizationIdAtom);
   const storedEmail = useAtomValue(contactEmailAtomFamily(organizationId || ""));
   const [isPending, setIsPending] = useState<"chat" | null>(null);
+  const [faqs, setFaqs] = useState<HelpCenterFaq[]>([]);
 
-  const faqs: { id: string; question: string; answer: string }[] = [];
+  useEffect(() => {
+    if (!organizationId || !widgetConfig.showFaqsOnHome) return;
+    fetchHelpCenter(organizationId)
+      .then((data) => {
+        setFaqs(data.faqs.slice(0, widgetConfig.faqsDisplayCount));
+      })
+      .catch(() => {});
+  }, [organizationId, widgetConfig.showFaqsOnHome, widgetConfig.faqsDisplayCount]);
 
   const handleStartChat = () => {
     setIsPending("chat");
