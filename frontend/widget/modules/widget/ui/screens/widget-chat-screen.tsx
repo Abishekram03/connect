@@ -116,23 +116,21 @@ export const WidgetChatScreen = ({
     const email = customerEmail || storedEmail || "";
 
     const init = async () => {
-      // Check for existing open conversation for this email+org
-      if (email) {
-        try {
-          const existing = await fetchConversations(email, orgId);
-          if (existing.length > 0) {
-            const conv = existing[0];
-            setConversationId(conv.id);
-            // Load existing messages
-            const msgs = await fetchMessages(conv.id);
-            setMessages(msgs);
-            if (msgs.length > 0) {
-              lastTimestampRef.current = msgs[msgs.length - 1].created_at;
-            }
-            return;
+      // Check for existing open conversation for this user+org
+      try {
+        const existing = await fetchConversations(email || undefined, orgId);
+        if (existing.length > 0) {
+          const conv = existing[0];
+          setConversationId(conv.id);
+          // Load existing messages
+          const msgs = await fetchMessages(conv.id);
+          setMessages(msgs);
+          if (msgs.length > 0) {
+            lastTimestampRef.current = msgs[msgs.length - 1].created_at;
           }
-        } catch {}
-      }
+          return;
+        }
+      } catch {}
 
       // No existing conversation — create new one
       const conv = await startConversation(orgId, {

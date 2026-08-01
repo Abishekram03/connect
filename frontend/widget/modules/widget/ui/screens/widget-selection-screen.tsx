@@ -108,7 +108,7 @@ export const WidgetSelectionScreen = ({
           />
         </Button>
 
-        {storedEmail && (
+        {organizationId && (
           <Button
             className="mb-4 h-[86px] w-full justify-between rounded-2xl border border-neutral-200 bg-white/90 px-4 text-left shadow-[0_2px_8px_rgb(0_0_0_/_0.08)]"
             variant="outline"

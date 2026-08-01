@@ -15,10 +15,11 @@ import {
   Loader2,
   Mail,
   ChevronDown,
-  AlertTriangle,
   Pencil,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   teamsApi,
   type Membership,
@@ -33,6 +34,8 @@ type TeamTab = "members" | "analytics";
 
 export default function TeamsPage() {
   const { user } = useAuth();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const [tab, setTab] = useState<Tab>("members");
   const [teamTab, setTeamTab] = useState<TeamTab>("members");
   const [teams, setTeams] = useState<Team[]>([]);
@@ -45,7 +48,6 @@ export default function TeamsPage() {
   const [showCreateTeam, setShowCreateTeam] = useState(false);
   const [showInviteMember, setShowInviteMember] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState<Membership | null>(null);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [newTeam, setNewTeam] = useState({ name: "", description: "" });
@@ -56,7 +58,6 @@ export default function TeamsPage() {
   const [teamMemberRoleTarget, setTeamMemberRoleTarget] = useState<{ userId: string; currentRole: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [error, setError] = useState("");
 
   const isOwner = user?.role === "owner";
   const isAdmin = user?.role === "owner" || user?.role === "admin";
@@ -73,7 +74,7 @@ export default function TeamsPage() {
       setMembers(membersData);
       setInvitations(invitationsData);
     } catch (e: any) {
-      setError(e.message || "Failed to load data");
+      toast.error(e.message || "Failed to load data");
     } finally {
       setLoading(false);
     }
@@ -101,18 +102,27 @@ export default function TeamsPage() {
       setNewTeam({ name: "", description: "" });
       setShowCreateTeam(false);
       setSelectedTeam(team);
+      toast.success("Team created");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     }
   };
 
   const handleDeleteTeam = async (id: string) => {
+    const ok = await confirm({
+      title: "Delete Team",
+      message: "Are you sure you want to delete this team? This action cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await teamsApi.deleteTeam(id);
       setTeams(teams.filter((t) => t.id !== id));
       if (selectedTeam?.id === id) setSelectedTeam(null);
+      toast.success("Team deleted");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     }
   };
 
@@ -126,8 +136,9 @@ export default function TeamsPage() {
       const { members: _, ...updatedBase } = updated;
       setTeams(teams.map((t) => (t.id === updatedBase.id ? updatedBase : t)));
       setEditTeam(null);
+      toast.success("Team updated");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     } finally {
       setActionLoading(false);
     }
@@ -145,24 +156,32 @@ export default function TeamsPage() {
       setInviteEmail("");
       setInviteRole("agent");
       setShowInviteMember(false);
+      toast.success("Invitation sent");
       loadData();
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleRemoveMember = async (membership: Membership) => {
+    const ok = await confirm({
+      title: "Remove Member",
+      message: `Are you sure you want to remove ${membership.user.name || membership.user.email}? This action cannot be undone.`,
+      confirmLabel: "Remove",
+      variant: "danger",
+    });
+    if (!ok) return;
     setActionLoading(true);
     try {
       await teamsApi.removeMember(membership.id);
       setMembers(members.filter((m) => m.id !== membership.id));
       if (selectedMember?.id === membership.id) setSelectedMember(null);
-      setShowRemoveConfirm(null);
+      toast.success("Member removed");
       loadData();
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     } finally {
       setActionLoading(false);
     }
@@ -177,8 +196,9 @@ export default function TeamsPage() {
         setSelectedMember({ ...selectedMember, role: newRole });
       }
       setShowRoleDropdown(false);
+      toast.success("Role updated");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     } finally {
       setActionLoading(false);
     }
@@ -195,20 +215,29 @@ export default function TeamsPage() {
       setShowAddMembers(false);
       setSelectedMemberIds([]);
       setAddMemberRole("member");
+      toast.success("Members added");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     }
   };
 
   const handleRemoveTeamMember = async (teamId: string, userId: string) => {
+    const ok = await confirm({
+      title: "Remove from Team",
+      message: "Are you sure you want to remove this member from the team?",
+      confirmLabel: "Remove",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await teamsApi.removeTeamMember(teamId, userId);
       const updated = await teamsApi.getTeam(teamId);
       setSelectedTeam(updated);
       const { members: _, ...updatedBase } = updated;
       setTeams(teams.map((t) => (t.id === updatedBase.id ? updatedBase : t)));
+      toast.success("Member removed from team");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     }
   };
 
@@ -220,8 +249,9 @@ export default function TeamsPage() {
       const updated = await teamsApi.getTeam(selectedTeam.id);
       setSelectedTeam(updated);
       setTeamMemberRoleTarget(null);
+      toast.success("Role updated");
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     } finally {
       setActionLoading(false);
     }
@@ -232,7 +262,7 @@ export default function TeamsPage() {
       const data = await teamsApi.getTeamAnalytics(teamId);
       setTeamAnalytics(data);
     } catch (e: any) {
-      setError(e.message);
+      toast.error(e.message);
     }
   };
 
@@ -279,18 +309,6 @@ export default function TeamsPage() {
             </button>
           </div>
         </div>
-
-        {error && (
-          <div className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
-            {error}
-            <button
-              onClick={() => setError("")}
-              className="ml-2 text-red-400 hover:text-red-600"
-            >
-              <X className="inline h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
 
         <div className="flex flex-1 gap-0 overflow-hidden">
           {/* Left panel: list */}
@@ -447,8 +465,13 @@ export default function TeamsPage() {
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={async () => {
-                                  await teamsApi.resendInvitation(inv.id);
-                                  loadData();
+                                  try {
+                                    await teamsApi.resendInvitation(inv.id);
+                                    toast.success("Invitation resent");
+                                    loadData();
+                                  } catch (e: any) {
+                                    toast.error(e.message);
+                                  }
                                 }}
                                 className="rounded p-1 text-muted-foreground hover:text-foreground"
                                 title="Resend invitation"
@@ -457,8 +480,20 @@ export default function TeamsPage() {
                               </button>
                               <button
                                 onClick={async () => {
-                                  await teamsApi.cancelInvitation(inv.id);
-                                  setInvitations(invitations.filter((i) => i.id !== inv.id));
+                                  const ok = await confirm({
+                                    title: "Cancel Invitation",
+                                    message: `Are you sure you want to cancel the invitation for ${inv.email}?`,
+                                    confirmLabel: "Cancel Invitation",
+                                    variant: "danger",
+                                  });
+                                  if (!ok) return;
+                                  try {
+                                    await teamsApi.cancelInvitation(inv.id);
+                                    setInvitations(invitations.filter((i) => i.id !== inv.id));
+                                    toast.success("Invitation cancelled");
+                                  } catch (e: any) {
+                                    toast.error(e.message);
+                                  }
                                 }}
                                 className="rounded p-1 text-muted-foreground hover:text-red-500"
                                 title="Cancel invitation"
@@ -779,7 +814,7 @@ export default function TeamsPage() {
                     </span>
                     {canManageMember(selectedMember) && (
                       <button
-                        onClick={() => setShowRemoveConfirm(selectedMember)}
+                        onClick={() => handleRemoveMember(selectedMember)}
                         className="rounded-md border border-border p-1.5 text-muted-foreground hover:text-red-500"
                         title="Remove member"
                       >
@@ -1138,41 +1173,6 @@ export default function TeamsPage() {
         </>
       )}
 
-      {/* Remove Member Confirmation */}
-      {showRemoveConfirm && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowRemoveConfirm(null)} />
-          <div className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-32px)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-card p-6 shadow-lg">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <h3 className="text-base font-semibold text-ink">Remove Member</h3>
-                <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
-              </div>
-            </div>
-            <p className="mb-5 text-sm text-muted-foreground">
-              Are you sure you want to remove <strong>{showRemoveConfirm.user.name || showRemoveConfirm.user.email}</strong> from your organization?
-            </p>
-            <div className="flex justify-end gap-2.5">
-              <button
-                onClick={() => setShowRemoveConfirm(null)}
-                className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleRemoveMember(showRemoveConfirm)}
-                disabled={actionLoading}
-                className="rounded-md bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-40"
-              >
-                {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Remove"}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
     </div>
   );
 }

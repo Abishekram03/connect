@@ -37,7 +37,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
         fields = [
-            "id", "status", "priority", "channel", "subject",
+            "id", "ticket_id", "status", "priority", "channel", "subject",
             "customer_name", "customer_email", "customer_avatar",
             "assignee", "team", "last_message", "message_count",
             "last_message_at", "created_at", "updated_at",

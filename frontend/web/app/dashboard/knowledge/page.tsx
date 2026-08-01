@@ -33,8 +33,12 @@ import {
   type Article,
   type FAQ,
 } from "@/lib/knowledge-service";
+import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-dialog";
 
 export default function KnowledgePage() {
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const [tab, setTab] = useState<"faqs" | "articles">("faqs");
   const [categories, setCategories] = useState<Category[]>([]);
   const [faqs, setFaqs] = useState<FAQ[]>([]);
@@ -96,17 +100,30 @@ export default function KnowledgePage() {
       setShowAddCategory(false);
       setCategoryForm({ name: "", description: "" });
       loadData();
-    } catch {} finally {
+      toast.success("Category created successfully");
+    } catch {
+      toast.error("Failed to create category");
+    } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteCategory = async (id: string) => {
+    const ok = await confirm({
+      title: "Delete Category",
+      message: "Are you sure you want to delete this category? Items in this category will become uncategorized.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await deleteCategory(id);
       if (selectedCategory === id) setSelectedCategory(null);
       loadData();
-    } catch {}
+      toast.success("Category deleted");
+    } catch {
+      toast.error("Failed to delete category");
+    }
   };
 
   const saveFaq = async () => {
@@ -119,18 +136,22 @@ export default function KnowledgePage() {
           answer: faqForm.answer,
           category_id: faqForm.category_id || null,
         });
+        toast.success("FAQ updated successfully");
       } else {
         await createFAQ({
           question: faqForm.question,
           answer: faqForm.answer,
           category_id: faqForm.category_id || null,
         });
+        toast.success("FAQ created successfully");
       }
       setShowAddFaq(false);
       setEditFaq(null);
       setFaqForm({ question: "", answer: "", category_id: "" });
       loadData();
-    } catch {} finally {
+    } catch {
+      toast.error(editFaq ? "Failed to update FAQ" : "Failed to create FAQ");
+    } finally {
       setSaving(false);
     }
   };
@@ -146,6 +167,7 @@ export default function KnowledgePage() {
           excerpt: articleForm.excerpt,
           category_id: articleForm.category_id || null,
         });
+        toast.success("Article updated successfully");
       } else {
         await createArticle({
           title: articleForm.title,
@@ -153,30 +175,53 @@ export default function KnowledgePage() {
           excerpt: articleForm.excerpt,
           category_id: articleForm.category_id || null,
         });
+        toast.success("Article created successfully");
       }
       setShowAddArticle(false);
       setEditArticle(null);
       setArticleForm({ title: "", content: "", excerpt: "", category_id: "" });
       loadData();
-    } catch {} finally {
+    } catch {
+      toast.error(editArticle ? "Failed to update article" : "Failed to create article");
+    } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteFaq = async (id: string) => {
+    const ok = await confirm({
+      title: "Delete FAQ",
+      message: "Are you sure you want to delete this FAQ? This action cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await deleteFAQ(id);
       if (selectedFaq?.id === id) setSelectedFaq(null);
       loadData();
-    } catch {}
+      toast.success("FAQ deleted");
+    } catch {
+      toast.error("Failed to delete FAQ");
+    }
   };
 
   const handleDeleteArticle = async (id: string) => {
+    const ok = await confirm({
+      title: "Delete Article",
+      message: "Are you sure you want to delete this article? This action cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await deleteArticle(id);
       if (selectedArticle?.id === id) setSelectedArticle(null);
       loadData();
-    } catch {}
+      toast.success("Article deleted");
+    } catch {
+      toast.error("Failed to delete article");
+    }
   };
 
   const handleTogglePublish = async (article: Article) => {
@@ -184,7 +229,10 @@ export default function KnowledgePage() {
       const updated = await updateArticle(article.id, { published: !article.published });
       if (selectedArticle?.id === article.id) setSelectedArticle(updated);
       loadData();
-    } catch {}
+      toast.success(article.published ? "Article unpublished" : "Article published");
+    } catch {
+      toast.error("Failed to update publish status");
+    }
   };
 
   return (

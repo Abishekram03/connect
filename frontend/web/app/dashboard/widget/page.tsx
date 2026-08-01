@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Save, Check, Loader2, Copy, CheckCheck, Paintbrush, Code, RefreshCw } from "lucide-react";
+import { Save, Check, Loader2, Copy, CheckCheck, Paintbrush, Code, RefreshCw, Upload } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/toast";
 
 type Tab = "appearance" | "install";
 
@@ -48,6 +49,7 @@ export default function WidgetPage() {
 
 function AppearanceTab() {
   const { user } = useAuth();
+  const toast = useToast();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [widget, setWidget] = useState({
     position: "bottom-right" as "bottom-right" | "bottom-left",
@@ -60,8 +62,12 @@ function AppearanceTab() {
     showFaqsOnHome: false,
     faqsDisplayCount: 3,
   });
+  const [branding, setBranding] = useState({
+    primaryColor: "#2563eb",
+    companyName: "Connect",
+    logoUrl: "",
+  });
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(true);
   const [iframeKey, setIframeKey] = useState(0);
 
@@ -75,7 +81,10 @@ function AppearanceTab() {
   }, [orgId]);
 
   useEffect(() => {
-    api.get<any>("/api/workspace/widget-config").catch(() => null).then((w) => {
+    Promise.all([
+      api.get<any>("/api/workspace/widget-config").catch(() => null),
+      api.get<any>("/api/workspace/branding").catch(() => null),
+    ]).then(([w, b]) => {
       if (w) {
         setWidget({
           position: w.position || "bottom-right",
@@ -87,6 +96,13 @@ function AppearanceTab() {
           helpCenterEnabled: w.help_center_enabled ?? true,
           showFaqsOnHome: w.show_faqs_on_home ?? false,
           faqsDisplayCount: w.faqs_display_count ?? 3,
+        });
+      }
+      if (b) {
+        setBranding({
+          primaryColor: b.primary_color || "#2563eb",
+          companyName: b.company_name || "Connect",
+          logoUrl: b.logo_url || "",
         });
       }
       setLoading(false);
@@ -109,11 +125,14 @@ function AppearanceTab() {
           helpCenterEnabled: widget.helpCenterEnabled,
           showFaqsOnHome: widget.showFaqsOnHome,
           faqsDisplayCount: widget.faqsDisplayCount,
+          primaryColor: branding.primaryColor,
+          companyName: branding.companyName,
+          logoUrl: branding.logoUrl,
         },
       },
       "*",
     );
-  }, [widget]);
+  }, [widget, branding]);
 
   useEffect(() => {
     const timer = setTimeout(pushConfig, 300);
@@ -122,24 +141,29 @@ function AppearanceTab() {
 
   const save = async () => {
     setSaving(true);
-    setMsg("");
     try {
-      await api.patch("/api/workspace/widget-config", {
-        position: widget.position,
-        border_radius: widget.borderRadius,
-        auto_greet: widget.autoGreet,
-        auto_greet_delay: widget.autoGreetDelay,
-        collect_email: widget.collectEmail,
-        show_branding: widget.showBranding,
-        help_center_enabled: widget.helpCenterEnabled,
-        show_faqs_on_home: widget.showFaqsOnHome,
-        faqs_display_count: widget.faqsDisplayCount,
-      });
-      setMsg("Saved");
+      await Promise.all([
+        api.patch("/api/workspace/widget-config", {
+          position: widget.position,
+          border_radius: widget.borderRadius,
+          auto_greet: widget.autoGreet,
+          auto_greet_delay: widget.autoGreetDelay,
+          collect_email: widget.collectEmail,
+          show_branding: widget.showBranding,
+          help_center_enabled: widget.helpCenterEnabled,
+          show_faqs_on_home: widget.showFaqsOnHome,
+          faqs_display_count: widget.faqsDisplayCount,
+        }),
+        api.patch("/api/workspace/branding", {
+          primary_color: branding.primaryColor,
+          company_name: branding.companyName,
+          logo_url: branding.logoUrl,
+        }),
+      ]);
+      toast.success("Widget appearance saved");
       setIframeKey((k) => k + 1);
-      setTimeout(() => setMsg(""), 2000);
     } catch {
-      setMsg("Failed to save");
+      toast.error("Failed to save widget settings");
     } finally {
       setSaving(false);
     }
@@ -312,6 +336,77 @@ function AppearanceTab() {
               )}
             </div>
           )}
+
+          {/* Branding */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Branding</p>
+            <div className="rounded-lg border border-border p-3.5 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Primary Color</label>
+                <div className="mt-1.5 flex items-center gap-3">
+                  <div
+                    className="h-9 w-9 rounded-md border border-border shrink-0"
+                    style={{ backgroundColor: branding.primaryColor }}
+                  />
+                  <input
+                    type="text"
+                    value={branding.primaryColor}
+                    onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
+                    className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none w-28 font-mono"
+                  />
+                  <input
+                    type="color"
+                    value={branding.primaryColor}
+                    onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
+                    className="h-9 w-9 cursor-pointer rounded border border-border shrink-0"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Company Name</label>
+                <input
+                  type="text"
+                  value={branding.companyName}
+                  onChange={(e) => setBranding({ ...branding, companyName: e.target.value })}
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Logo URL</label>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={branding.logoUrl}
+                    onChange={(e) => setBranding({ ...branding, logoUrl: e.target.value })}
+                    placeholder="https://example.com/logo.png"
+                    className="flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
+                  />
+                  <button className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                    <Upload className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+              {/* Branding Preview */}
+              <div className="rounded-md bg-surface p-3">
+                <div className="flex items-center gap-3">
+                  {branding.logoUrl ? (
+                    <img src={branding.logoUrl} alt="Logo" className="h-8 w-8 rounded-lg object-contain" />
+                  ) : (
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
+                      style={{ backgroundColor: branding.primaryColor }}
+                    >
+                      {branding.companyName.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-semibold text-ink">{branding.companyName}</p>
+                    <p className="text-[10px] text-muted-foreground">Customer Support</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Save Bar */}
@@ -325,11 +420,6 @@ function AppearanceTab() {
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {saving ? "Saving..." : "Save Changes"}
             </button>
-            {msg && (
-              <span className="flex items-center gap-1 text-xs text-emerald-600">
-                <Check className="h-3.5 w-3.5" /> {msg}
-              </span>
-            )}
           </div>
         </div>
       </div>

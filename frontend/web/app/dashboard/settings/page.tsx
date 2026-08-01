@@ -4,29 +4,27 @@ import { useState, useEffect } from "react";
 import {
   Save,
   Building2,
-  Palette,
   Bell,
   CreditCard,
   Check,
-  Upload,
   User,
   Loader2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api-client";
+import { useToast } from "@/components/toast";
 
-type Tab = "account" | "general" | "branding" | "notifications" | "billing";
+type Tab = "account" | "general" | "notifications" | "billing";
 
 export default function SettingsPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>("general");
   const [loading, setLoading] = useState(true);
 
   const [accountName, setAccountName] = useState(user?.name || "");
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [accountMsg, setAccountMsg] = useState("");
-  const [passwordMsg, setPasswordMsg] = useState("");
 
   const [workspace, setWorkspace] = useState({
     name: "",
@@ -34,15 +32,6 @@ export default function SettingsPage() {
     timezone: "UTC",
   });
   const [workspaceSaving, setWorkspaceSaving] = useState(false);
-  const [workspaceMsg, setWorkspaceMsg] = useState("");
-
-  const [branding, setBranding] = useState({
-    primaryColor: "#2563eb",
-    companyName: "Connect",
-    logoUrl: "",
-  });
-  const [brandingSaving, setBrandingSaving] = useState(false);
-  const [brandingMsg, setBrandingMsg] = useState("");
 
   const [notifications, setNotifications] = useState({
     emailNotifications: true,
@@ -52,7 +41,6 @@ export default function SettingsPage() {
     mentionAlert: true,
   });
   const [notifSaving, setNotifSaving] = useState(false);
-  const [notifMsg, setNotifMsg] = useState("");
 
   useEffect(() => {
     setAccountName(user?.name || "");
@@ -66,16 +54,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      api.get<any>("/api/workspace/branding").catch(() => null),
       api.get<any>("/api/workspace/notifications").catch(() => null),
-    ]).then(([b, n]) => {
-      if (b) {
-        setBranding({
-          primaryColor: b.primary_color || "#2563eb",
-          companyName: b.company_name || "Connect",
-          logoUrl: b.logo_url || "",
-        });
-      }
+    ]).then(([n]) => {
       if (n) {
         setNotifications({
           emailNotifications: n.email_notifications ?? true,
@@ -91,43 +71,22 @@ export default function SettingsPage() {
 
   const saveWorkspace = async () => {
     setWorkspaceSaving(true);
-    setWorkspaceMsg("");
     try {
       await api.patch("/api/workspace", {
         name: workspace.name,
         slug: workspace.slug,
         timezone: workspace.timezone,
       });
-      setWorkspaceMsg("Saved");
-      setTimeout(() => setWorkspaceMsg(""), 2000);
+      toast.success("Workspace settings saved");
     } catch {
-      setWorkspaceMsg("Failed to save");
+      toast.error("Failed to save workspace settings");
     } finally {
       setWorkspaceSaving(false);
     }
   };
 
-  const saveBranding = async () => {
-    setBrandingSaving(true);
-    setBrandingMsg("");
-    try {
-      await api.patch("/api/workspace/branding", {
-        primary_color: branding.primaryColor,
-        company_name: branding.companyName,
-        logo_url: branding.logoUrl,
-      });
-      setBrandingMsg("Saved");
-      setTimeout(() => setBrandingMsg(""), 2000);
-    } catch {
-      setBrandingMsg("Failed to save");
-    } finally {
-      setBrandingSaving(false);
-    }
-  };
-
   const saveNotifications = async () => {
     setNotifSaving(true);
-    setNotifMsg("");
     try {
       await api.patch("/api/workspace/notifications", {
         email_notifications: notifications.emailNotifications,
@@ -136,10 +95,9 @@ export default function SettingsPage() {
         weekly_digest: notifications.weeklyDigest,
         mention_alert: notifications.mentionAlert,
       });
-      setNotifMsg("Saved");
-      setTimeout(() => setNotifMsg(""), 2000);
+      toast.success("Notification preferences saved");
     } catch {
-      setNotifMsg("Failed to save");
+      toast.error("Failed to save notification preferences");
     } finally {
       setNotifSaving(false);
     }
@@ -148,39 +106,29 @@ export default function SettingsPage() {
   const tabs: { key: Tab; label: string; icon: typeof Building2 }[] = [
     { key: "account", label: "Account", icon: User },
     { key: "general", label: "General", icon: Building2 },
-    { key: "branding", label: "Branding", icon: Palette },
     { key: "notifications", label: "Notifications", icon: Bell },
     { key: "billing", label: "Billing", icon: CreditCard },
   ];
 
   const SaveButton = ({
     saving,
-    msg,
     onClick,
   }: {
     saving: boolean;
-    msg: string;
     onClick: () => void;
   }) => (
-    <div className="flex items-center gap-3">
-      <button
-        onClick={onClick}
-        disabled={saving}
-        className="flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
-      >
-        {saving ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <Save className="h-4 w-4" />
-        )}
-        {saving ? "Saving..." : "Save"}
-      </button>
-      {msg && (
-        <span className="flex items-center gap-1 text-xs text-emerald-600">
-          <Check className="h-3.5 w-3.5" /> {msg}
-        </span>
+    <button
+      onClick={onClick}
+      disabled={saving}
+      className="flex items-center gap-1.5 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground hover:opacity-90 disabled:opacity-50"
+    >
+      {saving ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Save className="h-4 w-4" />
       )}
-    </div>
+      {saving ? "Saving..." : "Save"}
+    </button>
   );
 
   if (loading) {
@@ -239,10 +187,9 @@ export default function SettingsPage() {
                           try {
                             const { updateProfile } = await import("@/lib/auth-service");
                             await updateProfile(accountName);
-                            setAccountMsg("Name updated");
-                            setTimeout(() => setAccountMsg(""), 2000);
+                            toast.success("Name updated");
                           } catch {
-                            setAccountMsg("Failed to update name");
+                            toast.error("Failed to update name");
                           }
                         }}
                         className="mt-1 shrink-0 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground"
@@ -250,9 +197,6 @@ export default function SettingsPage() {
                         Save
                       </button>
                     </div>
-                    {accountMsg && (
-                      <p className="mt-1 text-xs text-muted-foreground">{accountMsg}</p>
-                    )}
                   </div>
 
                   <div>
@@ -287,21 +231,17 @@ export default function SettingsPage() {
                           try {
                             const { changePassword } = await import("@/lib/auth-service");
                             await changePassword(oldPassword, newPassword);
-                            setPasswordMsg("Password updated");
+                            toast.success("Password updated");
                             setOldPassword("");
                             setNewPassword("");
-                            setTimeout(() => setPasswordMsg(""), 2000);
                           } catch (err: any) {
-                            setPasswordMsg(err.message || "Failed to update password");
+                            toast.error(err.message || "Failed to update password");
                           }
                         }}
                         className="rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground"
                       >
                         Update Password
                       </button>
-                      {passwordMsg && (
-                        <p className="text-xs text-muted-foreground">{passwordMsg}</p>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -315,7 +255,7 @@ export default function SettingsPage() {
                     <h2 className="text-base font-semibold text-ink">Workspace</h2>
                     <p className="text-xs text-muted-foreground mt-1">Manage your workspace settings</p>
                   </div>
-                  <SaveButton saving={workspaceSaving} msg={workspaceMsg} onClick={saveWorkspace} />
+                  <SaveButton saving={workspaceSaving} onClick={saveWorkspace} />
                 </div>
 
                 <div className="space-y-5">
@@ -358,83 +298,6 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {tab === "branding" && (
-              <div className="p-6 space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-base font-semibold text-ink">Branding</h2>
-                    <p className="text-xs text-muted-foreground mt-1">Customize your brand appearance</p>
-                  </div>
-                  <SaveButton saving={brandingSaving} msg={brandingMsg} onClick={saveBranding} />
-                </div>
-
-                <div className="space-y-5">
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Primary Color</label>
-                    <div className="mt-1 flex items-center gap-3">
-                      <div
-                        className="h-10 w-10 rounded-md border border-border"
-                        style={{ backgroundColor: branding.primaryColor }}
-                      />
-                      <input
-                        type="text"
-                        value={branding.primaryColor}
-                        onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
-                        className="rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none w-32 font-mono"
-                      />
-                      <input
-                        type="color"
-                        value={branding.primaryColor}
-                        onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
-                        className="h-10 w-10 cursor-pointer rounded border border-border"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Company Name</label>
-                    <input
-                      type="text"
-                      value={branding.companyName}
-                      onChange={(e) => setBranding({ ...branding, companyName: e.target.value })}
-                      className="mt-1 w-full max-w-md rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-muted-foreground">Logo URL</label>
-                    <div className="mt-1 flex max-w-md items-center gap-2">
-                      <input
-                        type="text"
-                        value={branding.logoUrl}
-                        onChange={(e) => setBranding({ ...branding, logoUrl: e.target.value })}
-                        placeholder="https://example.com/logo.png"
-                        className="flex-1 rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none placeholder:text-muted-foreground"
-                      />
-                      <button className="flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
-                        <Upload className="h-4 w-4" />
-                        Upload
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-border bg-surface p-5">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Preview</p>
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="flex h-12 w-12 items-center justify-center rounded-xl text-lg font-bold text-white shadow-sm"
-                      style={{ backgroundColor: branding.primaryColor }}
-                    >
-                      {branding.companyName.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-ink">{branding.companyName}</p>
-                      <p className="text-xs text-muted-foreground">Customer Support</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {tab === "notifications" && (
               <div className="p-6 space-y-6">
                 <div className="flex items-center justify-between">
@@ -442,7 +305,7 @@ export default function SettingsPage() {
                     <h2 className="text-base font-semibold text-ink">Notifications</h2>
                     <p className="text-xs text-muted-foreground mt-1">Manage how you receive alerts</p>
                   </div>
-                  <SaveButton saving={notifSaving} msg={notifMsg} onClick={saveNotifications} />
+                  <SaveButton saving={notifSaving} onClick={saveNotifications} />
                 </div>
 
                 <div className="space-y-3">

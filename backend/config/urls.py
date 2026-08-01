@@ -8,4 +8,5 @@ urlpatterns = [
     path("api/", include("conversations.urls")),
     path("api/", include("teams.urls")),
     path("api/", include("knowledge_base.urls")),
+    path("api/", include("ai_service.urls")),
 ]

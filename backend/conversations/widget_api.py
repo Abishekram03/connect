@@ -43,6 +43,7 @@ def widget_config(request):
         "helpCenterEnabled": wc.help_center_enabled,
         "showFaqsOnHome": wc.show_faqs_on_home,
         "faqsDisplayCount": wc.faqs_display_count,
+        "aiReplyEnabled": getattr(org, 'ai_config', None) and org.ai_config.auto_reply_enabled,
     })
 
 
@@ -98,6 +99,7 @@ def widget_conversations(request):
 
     return Response({
         "id": str(conversation.id),
+        "ticket_id": conversation.ticket_id,
         "created_at": conversation.created_at.isoformat(),
     }, status=status.HTTP_201_CREATED)
 
@@ -134,4 +136,55 @@ def conversation_messages(request, pk):
     conversation.last_message_at = timezone.now()
     conversation.save(update_fields=["last_message_at"])
 
-    return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
+    # Check for AI auto-reply
+    ai_reply_data = None
+    try:
+        from ai_service.models import AIConfig
+        from ai_service.rag import get_provider, generate_reply
+
+        ai_config = AIConfig.objects.filter(organization=conversation.organization).first()
+        if ai_config and ai_config.auto_reply_enabled:
+            # Check max AI turns
+            ai_turn_count = Message.objects.filter(
+                conversation=conversation, is_from_customer=False, sender__isnull=True
+            ).count()
+
+            if ai_turn_count < ai_config.max_ai_turns:
+                provider = get_provider(conversation.organization)
+                history = list(
+                    conversation.messages.filter(type="reply")
+                    .order_by("created_at")
+                    .values("body", "is_from_customer")
+                )
+                result = generate_reply(
+                    conversation.organization, body, history, provider, ai_config
+                )
+
+                if not result["escalate"]:
+                    ai_message = Message.objects.create(
+                        conversation=conversation,
+                        type="reply",
+                        body=result["content"],
+                        sender=None,
+                        is_from_customer=False,
+                    )
+                    conversation.last_message_at = timezone.now()
+                    conversation.save(update_fields=["last_message_at"])
+                    ai_reply_data = {
+                        "id": str(ai_message.id),
+                        "body": result["content"],
+                        "confidence": result["confidence"],
+                    }
+                else:
+                    ai_reply_data = {
+                        "escalate": True,
+                        "reason": result["escalation_reason"],
+                    }
+    except Exception:
+        pass  # Don't break the widget flow if AI fails
+
+    response_data = MessageSerializer(message).data
+    if ai_reply_data:
+        response_data["ai_reply"] = ai_reply_data
+
+    return Response(response_data, status=status.HTTP_201_CREATED)

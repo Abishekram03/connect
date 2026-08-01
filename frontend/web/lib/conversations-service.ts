@@ -8,6 +8,7 @@ export interface Team {
 
 export interface Conversation {
   id: string;
+  ticket_id: number;
   status: "open" | "pending" | "closed";
   priority: "low" | "normal" | "high" | "urgent";
   channel: "widget" | "email" | "api";

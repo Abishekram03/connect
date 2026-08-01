@@ -77,6 +77,7 @@ export function startConversation(organizationId: string, data?: {
 
 export interface ConversationListItem {
   id: string;
+  ticket_id: number;
   status: string;
   priority: string;
   subject: string;
@@ -88,7 +89,7 @@ export interface ConversationListItem {
   created_at: string;
 }
 
-export function fetchConversations(email: string, orgId?: string): Promise<ConversationListItem[]> {
+export function fetchConversations(email?: string, orgId?: string): Promise<ConversationListItem[]> {
   const params = new URLSearchParams();
   if (email) params.set("email", email);
   if (orgId) {

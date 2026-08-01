@@ -2,7 +2,7 @@
 
 import {
   Inbox,
-  Sparkles,
+  Bot,
   BookOpen,
   BarChart3,
   Palette,
@@ -27,7 +27,7 @@ import { storeUser } from "@/lib/auth-service";
 
 const navItems = [
   { icon: Inbox, label: "Inbox", href: "/dashboard/inbox" },
-  { icon: Sparkles, label: "AI", href: "/dashboard/ai" },
+  { icon: Bot, label: "AI", href: "/dashboard/ai" },
   { icon: BookOpen, label: "Knowledge", href: "/dashboard/knowledge" },
   { icon: BarChart3, label: "Insights", href: "/dashboard/insights" },
   { icon: Palette, label: "Widget", href: "/dashboard/widget" },

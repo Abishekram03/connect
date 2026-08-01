@@ -1,8 +1,10 @@
 "use client";
 
-import { Search, Send, Phone, Mail, MoreHorizontal, Loader2, ChevronDown, ChevronRight, UserCheck, StickyNote, Paperclip, Sparkles, Smile, Bot, MessageSquare, FileText, Globe, Clock, Monitor, Tag, Languages, Archive, Star, Trash2, UserPlus, Hash } from "lucide-react";
+import { Search, Send, Phone, Mail, MoreHorizontal, Loader2, ChevronDown, ChevronRight, UserCheck, StickyNote, Paperclip, Sparkles, Smile, Bot, MessageSquare, FileText, Globe, Clock, Monitor, Tag, Languages, Archive, Star, Trash2, UserPlus, Hash, Copy, ArrowRight } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   fetchConversations,
   fetchConversation,
@@ -19,11 +21,18 @@ import {
   type Agent,
   type Team,
 } from "@/lib/conversations-service";
+import {
+  suggestReply,
+  summarizeConversation,
+  getNextSteps,
+} from "@/lib/ai-service";
 
 type FilterKey = "all" | "assigned" | "unassigned" | "closed";
 
 export default function InboxPage() {
   const { user } = useAuth();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeConvo, setActiveConvo] = useState<ConversationDetail | null>(null);
@@ -52,6 +61,8 @@ export default function InboxPage() {
   const [copilotMessages, setCopilotMessages] = useState<{ role: "user" | "assistant"; text: string }[]>([]);
   const [copilotLoading, setCopilotLoading] = useState(false);
   const copilotEndRef = useRef<HTMLDivElement>(null);
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [aiSuggestionsLoading, setAiSuggestionsLoading] = useState(false);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -118,6 +129,7 @@ export default function InboxPage() {
       setReplyText("");
       loadConversations();
     } catch {
+      toast.error("Failed to send message");
     } finally {
       setSending(false);
     }
@@ -136,7 +148,10 @@ export default function InboxPage() {
       const updated = await assignConversation(activeId, assigneeId, activeConvo?.team?.id || undefined);
       setActiveConvo(updated);
       loadConversations();
-    } catch {}
+      toast.success("Conversation assigned");
+    } catch {
+      toast.error("Failed to assign conversation");
+    }
   };
 
   const handleTeamChange = async (teamId?: string) => {
@@ -145,7 +160,10 @@ export default function InboxPage() {
       const updated = await assignConversation(activeId, undefined, teamId || undefined);
       setActiveConvo(updated);
       loadConversations();
-    } catch {}
+      toast.success("Team updated");
+    } catch {
+      toast.error("Failed to update team");
+    }
   };
 
   const handleStatusChange = async (status: string) => {
@@ -154,7 +172,10 @@ export default function InboxPage() {
       const updated = await updateConversation(activeId, { status });
       setActiveConvo(updated);
       loadConversations();
-    } catch {}
+      toast.success(`Status changed to ${status}`);
+    } catch {
+      toast.error("Failed to change status");
+    }
   };
 
   const handlePriorityChange = async (priority: string) => {
@@ -163,11 +184,21 @@ export default function InboxPage() {
       const updated = await updateConversation(activeId, { priority });
       setActiveConvo(updated);
       loadConversations();
-    } catch {}
+      toast.success(`Priority changed to ${priority}`);
+    } catch {
+      toast.error("Failed to change priority");
+    }
   };
 
   const handleDelete = async () => {
     if (!activeId) return;
+    const ok = await confirm({
+      title: "Delete conversation",
+      message: "Are you sure you want to delete this conversation? This action cannot be undone.",
+      confirmLabel: "Delete",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await deleteConversation(activeId);
       setActiveId(null);
@@ -175,32 +206,79 @@ export default function InboxPage() {
       setMessages([]);
       setMoreOpen(false);
       loadConversations();
-    } catch {}
+      toast.success("Conversation deleted");
+    } catch {
+      toast.error("Failed to delete conversation");
+    }
   };
 
   const handleCopilotSend = async (text?: string) => {
     const msg = (text || copilotInput).trim();
-    if (!msg || copilotLoading) return;
+    if (!msg || copilotLoading || !activeId) return;
     setCopilotMessages((prev) => [...prev, { role: "user", text: msg }]);
     setCopilotInput("");
     setCopilotLoading(true);
-    // Simulate AI response — replace with real API call later
-    setTimeout(() => {
-      const responses: Record<string, string> = {
-        summarize: "**Conversation Summary**\n\nThis customer is asking about pricing for the Enterprise plan. Key concerns:\n- Wants to know about volume discounts\n- Needs SSO integration\n- Asked about SLA guarantees\n\n**Suggested next action:** Share the Enterprise pricing sheet and schedule a call with the sales team.",
-        key: "**Key Information**\n\n- **Customer:** " + (activeConvo?.customer_name || "Unknown") + "\n- **Issue:** Product pricing inquiry\n- **Priority:** " + (activeConvo?.priority || "normal") + "\n- **Channel:** " + (activeConvo?.channel || "—") + "\n- **Messages:** " + (activeConvo?.message_count || 0) + "\n- **Status:** " + (activeConvo?.status || "open"),
-        sentiment: "**Sentiment Analysis**\n\nThe overall tone of this conversation is **neutral to positive**. The customer is engaging constructively and asking specific questions about features, which indicates genuine interest rather than frustration.",
-      };
-      let reply = responses[msg.toLowerCase()] || "I've analyzed this conversation. Here are the key takeaways:\n\n1. The customer is asking about product features and pricing\n2. They seem interested but need more information\n3. Consider following up with a detailed proposal\n\nIs there anything specific you'd like me to look into?";
-      setCopilotMessages((prev) => [...prev, { role: "assistant", text: reply }]);
+
+    try {
+      const lowerMsg = msg.toLowerCase();
+      if (lowerMsg === "summarize" || lowerMsg.startsWith("summarize")) {
+        const res = await summarizeConversation(activeId);
+        setCopilotMessages((prev) => [...prev, { role: "assistant", text: res.summary }]);
+      } else if (lowerMsg === "next steps" || lowerMsg.startsWith("next step")) {
+        const res = await getNextSteps(activeId);
+        const steps = res.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+        setCopilotMessages((prev) => [...prev, { role: "assistant", text: `**Suggested Next Steps:**\n\n${steps}` }]);
+      } else if (lowerMsg === "suggest" || lowerMsg.startsWith("suggest reply")) {
+        const res = await suggestReply(activeId);
+        const formatted = res.suggestions.map((s, i) => `**Option ${i + 1}:**\n${s}`).join("\n\n---\n\n");
+        setCopilotMessages((prev) => [...prev, { role: "assistant", text: `**Suggested Replies:**\n\n${formatted}` }]);
+      } else {
+        // Default: try summarize + next steps for generic questions
+        const [summaryRes, stepsRes] = await Promise.allSettled([
+          summarizeConversation(activeId),
+          getNextSteps(activeId),
+        ]);
+        let reply = "I can help you with this conversation. Try:\n- **\"summarize\"** — Get a summary\n- **\"next steps\"** — Suggested actions\n- **\"suggest\"** — 3 reply suggestions";
+        if (summaryRes.status === "fulfilled" && stepsRes.status === "fulfilled") {
+          const steps = stepsRes.value.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+          reply = `**Summary:**\n${summaryRes.value.summary}\n\n**Next Steps:**\n${steps}`;
+        } else if (summaryRes.status === "fulfilled") {
+          reply = `**Summary:**\n${summaryRes.value.summary}`;
+        } else if (stepsRes.status === "fulfilled") {
+          const steps = stepsRes.value.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+          reply = `**Next Steps:**\n${steps}`;
+        }
+        setCopilotMessages((prev) => [...prev, { role: "assistant", text: reply }]);
+      }
+    } catch (err) {
+      setCopilotMessages((prev) => [...prev, { role: "assistant", text: "AI is not configured or unavailable. Please set up your API key in the AI settings." }]);
+    } finally {
       setCopilotLoading(false);
-    }, 1200);
+    }
+  };
+
+  const handleAiSuggestions = async () => {
+    if (!activeId || aiSuggestionsLoading) return;
+    setAiSuggestionsLoading(true);
+    try {
+      const res = await suggestReply(activeId);
+      setAiSuggestions(res.suggestions);
+    } catch {
+      setAiSuggestions([]);
+    } finally {
+      setAiSuggestionsLoading(false);
+    }
+  };
+
+  const applySuggestion = (text: string) => {
+    setReplyText(text);
+    setAiSuggestions([]);
   };
 
   const copilotSuggestions = [
     { label: "Summarize", key: "summarize" },
-    { label: "Key info", key: "key" },
-    { label: "Sentiment", key: "sentiment" },
+    { label: "Next steps", key: "next steps" },
+    { label: "Suggest reply", key: "suggest" },
   ];
 
   const formatTime = (iso: string) => {
@@ -691,6 +769,28 @@ export default function InboxPage() {
 
               {/* Reply input */}
               <div className="border-t border-border px-3 py-2.5">
+                {/* AI Suggestion chips */}
+                {aiSuggestions.length > 0 && (
+                  <div className="mb-2 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-medium text-accent flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" /> AI Suggestions
+                      </span>
+                      <button onClick={() => setAiSuggestions([])} className="text-[10px] text-muted-foreground hover:text-ink">Clear</button>
+                    </div>
+                    {aiSuggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onClick={() => applySuggestion(s)}
+                        className="group flex w-full items-start gap-2 rounded-lg border border-accent/20 bg-accent/5 p-2.5 text-left transition-colors hover:border-accent/40 hover:bg-accent/10"
+                      >
+                        <p className="flex-1 text-xs text-ink leading-relaxed line-clamp-3">{s}</p>
+                        <ArrowRight className="h-3.5 w-3.5 shrink-0 mt-0.5 text-accent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {/* Mode toggle + action buttons */}
                 <div className="mb-2 flex items-center justify-between">
                   <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-0.5">
@@ -718,8 +818,13 @@ export default function InboxPage() {
                     <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="Attach file">
                       <Paperclip className="h-3.5 w-3.5" />
                     </button>
-                    <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="AI assist">
-                      <Sparkles className="h-3.5 w-3.5" />
+                    <button
+                      onClick={handleAiSuggestions}
+                      disabled={aiSuggestionsLoading}
+                      className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors disabled:opacity-50"
+                      title="AI Suggest Reply"
+                    >
+                      {aiSuggestionsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                     </button>
                     <button className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-ink transition-colors" title="Emoji">
                       <Smile className="h-3.5 w-3.5" />
@@ -965,11 +1070,11 @@ function DetailsContent({ activeConvo, formatTime, teams, agents, onTeamChange, 
                 {label("ID")}
                 <button
                   onClick={() => { navigator.clipboard.writeText(activeConvo.id); }}
-                  className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-ink transition-colors font-mono truncate max-w-[65%]"
-                  title="Click to copy"
+                  className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-ink transition-colors font-mono"
+                  title="Click to copy full ID"
                 >
                   <Hash className="h-3 w-3 shrink-0" />
-                  {activeConvo.id.slice(0, 8)}...
+                  {activeConvo.ticket_id}
                 </button>
               </div>
               <div className="flex items-center justify-between">

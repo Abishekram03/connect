@@ -27,6 +27,7 @@ class Conversation(models.Model):
     organization = models.ForeignKey(
         "accounts.Organization", on_delete=models.CASCADE, related_name="conversations"
     )
+    ticket_id = models.PositiveIntegerField(editable=False, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open")
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="normal")
     channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES, default="widget")
@@ -50,6 +51,14 @@ class Conversation(models.Model):
     class Meta:
         db_table = "conversations"
         ordering = ["-last_message_at"]
+
+    def save(self, *args, **kwargs):
+        if self.ticket_id is None:
+            max_ticket = Conversation.objects.filter(
+                organization=self.organization
+            ).aggregate(models.Max("ticket_id"))["ticket_id__max"]
+            self.ticket_id = (max_ticket or 0) + 1
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.customer_name or 'Unknown'} - {self.subject or 'No subject'}"

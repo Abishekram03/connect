@@ -53,11 +53,11 @@ export const WidgetInboxScreen = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!contactEmail) {
+    if (!orgId) {
       setLoading(false);
       return;
     }
-    fetchConversations(contactEmail, orgId || undefined)
+    fetchConversations(contactEmail || undefined, orgId)
       .then(setConversations)
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -95,10 +95,10 @@ export const WidgetInboxScreen = ({
                   }}
                 >
                   <div
-                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
-                    style={{ backgroundColor: `${widgetConfig.primaryColor}1A` }}
+                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+                    style={{ backgroundColor: `${widgetConfig.primaryColor}1A`, color: widgetConfig.primaryColor }}
                   >
-                    <MessageSquare className="h-4 w-4" style={{ color: widgetConfig.primaryColor }} />
+                    #{conv.ticket_id}
                   </div>
 
                   <div className="min-w-0 flex-1">
