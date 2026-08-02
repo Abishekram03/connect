@@ -1,4 +1,4 @@
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 function getSessionToken(orgId: string): string {
   if (typeof window === "undefined") return "";
@@ -99,16 +99,22 @@ export function fetchConversations(email?: string, orgId?: string): Promise<Conv
   return api(`/api/widget/conversations?${params.toString()}`);
 }
 
-export function sendMessage(conversationId: string, body: string): Promise<MessageResponse> {
+export function sendMessage(conversationId: string, body: string, orgId?: string): Promise<MessageResponse> {
   return api(`/api/widget/conversations/${conversationId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ body }),
+    body: JSON.stringify({
+      body,
+      ...(orgId ? { session_token: getSessionToken(orgId) } : {}),
+    }),
   });
 }
 
-export function fetchMessages(conversationId: string, since?: string): Promise<MessageResponse[]> {
-  const params = since ? `?since=${encodeURIComponent(since)}` : "";
-  return api(`/api/widget/conversations/${conversationId}/messages${params}`);
+export function fetchMessages(conversationId: string, since?: string, orgId?: string | null): Promise<MessageResponse[]> {
+  const params = new URLSearchParams();
+  if (since) params.set("since", since);
+  if (orgId) params.set("session_token", getSessionToken(orgId));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return api(`/api/widget/conversations/${conversationId}/messages${qs}`);
 }
 
 // ─── Help Center ──────────────────────────────────────────

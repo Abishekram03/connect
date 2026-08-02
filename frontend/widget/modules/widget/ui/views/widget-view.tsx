@@ -63,12 +63,22 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
   // Listen for config from parent (widget.js or dashboard preview)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
+      // Validate origin — only accept from own domain or localhost for dev
+      const allowedOrigins = [
+        process.env.NEXT_PUBLIC_WIDGET_URL || "http://localhost:3001",
+        process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+      ];
+      if (!allowedOrigins.includes(event.origin)) return;
+
       const { type, payload } = event.data || {};
       if (
         (type === "connect:config" || type === "connect:config-update") &&
         payload
       ) {
-        console.log("[Widget] Received config update:", payload);
         setWidgetConfig((prev) => ({ ...prev, ...payload }));
       }
     };
@@ -79,6 +89,7 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
   // Send config to parent (for launcher styling)
   useEffect(() => {
     if (window.parent && window.parent !== window) {
+      const targetOrigin = window.location.origin;
       window.parent.postMessage(
         {
           type: "connect:launcher-config",
@@ -88,7 +99,7 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
             borderRadius: widgetConfig.borderRadius,
           },
         },
-        "*",
+        targetOrigin,
       );
     }
   }, [

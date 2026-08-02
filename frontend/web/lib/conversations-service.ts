@@ -28,6 +28,8 @@ export interface Message {
   id: string;
   type: "reply" | "note" | "system";
   body: string;
+  original_body: string;
+  detected_language: string;
   sender: string | null;
   sender_name: string;
   is_from_customer: boolean;

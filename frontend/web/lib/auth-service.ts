@@ -16,6 +16,7 @@ export interface User {
   role: string;
   status: string;
   organization: Organization;
+  language: string;
   date_joined: string;
 }
 

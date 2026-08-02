@@ -76,7 +76,7 @@ function AppearanceTab() {
 
   useEffect(() => {
     if (orgId) {
-      setWidgetUrl(`http://localhost:3001?organizationId=${orgId}&mode=preview`);
+      setWidgetUrl(`${process.env.NEXT_PUBLIC_WIDGET_URL || "http://localhost:3001"}?organizationId=${orgId}&mode=preview`);
     }
   }, [orgId]);
 
@@ -130,7 +130,7 @@ function AppearanceTab() {
           logoUrl: branding.logoUrl,
         },
       },
-      "*",
+      process.env.NEXT_PUBLIC_WIDGET_URL || "http://localhost:3001",
     );
   }, [widget, branding]);
 

@@ -1,8 +1,9 @@
 import logging
 from django.utils import timezone
 from rest_framework import status, permissions
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 
 from .models import AIConfig, KnowledgeSource, DocumentChunk, AIReplyLog
 from .serializers import (
@@ -36,6 +37,20 @@ def get_user_org(user):
     return None
 
 
+def get_user_role(user):
+    if hasattr(user, "role") and user.role in ("admin", "owner"):
+        return user.role
+    from teams.models import Membership
+    membership = Membership.objects.filter(user=user, status="active").first()
+    if membership:
+        return membership.role
+    return "agent"
+
+
+def require_admin_or_owner(user):
+    return get_user_role(user) in ("admin", "owner")
+
+
 # ── AI Config ──
 
 @api_view(["GET", "PATCH"])
@@ -51,7 +66,21 @@ def ai_config_detail(request):
         serializer = AIConfigSerializer(config)
         return Response(serializer.data)
 
-    serializer = AIConfigSerializer(config, data=request.data, partial=True)
+    if not require_admin_or_owner(request.user):
+        return Response(
+            {"detail": "Only admins and owners can modify AI configuration"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # For PATCH, only update provider_api_key if it's not masked
+    update_data = dict(request.data)
+    if "provider_api_key" in update_data:
+        key_val = update_data["provider_api_key"]
+        if key_val and ("****" in key_val or len(key_val) < 10):
+            # Client sent masked key — don't overwrite the real one
+            del update_data["provider_api_key"]
+
+    serializer = AIConfigSerializer(config, data=update_data, partial=True)
     serializer.is_valid(raise_exception=True)
     serializer.save()
     return Response(serializer.data)
@@ -122,11 +151,11 @@ def sync_source(request, pk):
         provider = get_provider(org)
         chunk_count = sync_source_to_chunks(source, provider)
         return Response({"chunk_count": chunk_count, "is_indexed": True})
-    except ValueError as e:
-        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-    except Exception as e:
-        logger.error(f"Sync source error: {e}")
-        return Response({"detail": f"Sync failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except ValueError:
+        return Response({"detail": "Sync configuration error. Check your API settings."}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception:
+        logger.error("Sync source error for source %s", pk, exc_info=True)
+        return Response({"detail": "Sync failed. Please try again later."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["POST"])
@@ -139,8 +168,8 @@ def sync_all_sources(request):
 
     try:
         provider = get_provider(org)
-    except ValueError as e:
-        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except ValueError:
+        return Response({"detail": "AI not configured. Check your API settings."}, status=status.HTTP_400_BAD_REQUEST)
 
     sources = KnowledgeSource.objects.filter(organization=org)
     total_chunks = 0
@@ -150,8 +179,9 @@ def sync_all_sources(request):
         try:
             chunk_count = sync_source_to_chunks(source, provider)
             total_chunks += chunk_count
-        except Exception as e:
-            errors.append({"source_id": str(source.id), "error": str(e)})
+        except Exception:
+            logger.error("Sync source %s failed", source.id, exc_info=True)
+            errors.append({"source_id": str(source.id), "error": "Sync failed"})
 
     return Response({
         "total_chunks": total_chunks,
@@ -209,8 +239,13 @@ def sync_kb_to_sources(request):
 
 # ── Widget Auto-Reply ──
 
+class WidgetAutoReplyThrottle(AnonRateThrottle):
+    rate = "20/minute"
+
+
 @api_view(["POST"])
 @permission_classes([permissions.AllowAny])
+@throttle_classes([WidgetAutoReplyThrottle])
 def widget_auto_reply(request):
     """Handle widget message and return AI auto-reply if enabled."""
     serializer = AutoReplyRequestSerializer(data=request.data)
@@ -229,6 +264,18 @@ def widget_auto_reply(request):
 
     if not config or not config.auto_reply_enabled:
         return Response({"reply": None, "escalate": False})
+
+    # Per-org AI rate limit (30/min)
+    from django.core.cache import cache
+    org_ai_rate_key = f"widget_ai_rate:{org.id}"
+    ai_count = cache.get(org_ai_rate_key, 0)
+    if ai_count >= 30:
+        return Response({
+            "reply": None,
+            "escalate": True,
+            "escalation_reason": "rate_limit_exceeded",
+        })
+    cache.set(org_ai_rate_key, ai_count + 1, timeout=60)
 
     # Check max AI turns
     ai_reply_count = Message.objects.filter(
@@ -335,9 +382,9 @@ def suggest_reply_view(request):
         provider = get_provider(org)
         suggestions = suggest_reply(org, messages, provider, config)
         return Response({"suggestions": suggestions})
-    except Exception as e:
-        logger.error(f"Suggest reply error: {e}")
-        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception:
+        logger.error("Suggest reply error for conversation %s", conversation_id, exc_info=True)
+        return Response({"detail": "AI suggestion failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["POST"])
@@ -367,9 +414,9 @@ def summarize_view(request):
         provider = get_provider(org)
         summary = summarize_conversation(org, messages, provider)
         return Response({"summary": summary})
-    except Exception as e:
-        logger.error(f"Summarize error: {e}")
-        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception:
+        logger.error("Summarize error for conversation %s", conversation_id, exc_info=True)
+        return Response({"detail": "Summarization failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(["POST"])
@@ -399,9 +446,9 @@ def next_steps_view(request):
         provider = get_provider(org)
         steps = suggest_next_steps(org, messages, provider)
         return Response({"steps": steps})
-    except Exception as e:
-        logger.error(f"Next steps error: {e}")
-        return Response({"detail": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception:
+        logger.error("Next steps error for conversation %s", conversation_id, exc_info=True)
+        return Response({"detail": "AI suggestion failed. Please try again."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ── AI Reply Logs ──

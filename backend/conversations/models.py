@@ -77,6 +77,8 @@ class Message(models.Model):
     )
     type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="reply")
     body = models.TextField()
+    original_body = models.TextField(blank=True, default="", help_text="Original text before translation")
+    detected_language = models.CharField(max_length=10, blank=True, default="", help_text="Detected language code")
     sender = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True
     )

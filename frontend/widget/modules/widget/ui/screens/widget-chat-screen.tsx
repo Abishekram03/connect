@@ -65,7 +65,7 @@ export const WidgetChatScreen = ({
   // Load existing messages when viewing a past conversation
   useEffect(() => {
     if (!conversationId || !isHistorical || messages.length > 0) return;
-    fetchMessages(conversationId).then((msgs) => {
+    fetchMessages(conversationId, undefined, orgId).then((msgs) => {
       setMessages(msgs);
       if (msgs.length > 0) {
         lastTimestampRef.current = msgs[msgs.length - 1].created_at;
@@ -88,7 +88,7 @@ export const WidgetChatScreen = ({
           const cid = conversationIdRef.current;
           if (!cid) return;
           const since = lastTimestampRef.current || undefined;
-          const newMsgs = await fetchMessages(cid, since);
+          const newMsgs = await fetchMessages(cid, since, orgId);
           if (newMsgs.length > 0) {
             setMessages((prev) => {
               const existing = new Set(prev.map((m) => m.id));
@@ -123,9 +123,31 @@ export const WidgetChatScreen = ({
           const conv = existing[0];
           setConversationId(conv.id);
           // Load existing messages
-          const msgs = await fetchMessages(conv.id);
-          setMessages(msgs);
-          if (msgs.length > 0) {
+          const msgs = await fetchMessages(conv.id, undefined, orgId);
+
+          // Send the user's new first message to the existing conversation
+          let newMsg: MessageResponse | null = null;
+          if (userFirstMessage) {
+            try {
+              newMsg = await sendMessage(conv.id, userFirstMessage, orgId || undefined);
+            } catch {}
+          }
+
+          // Merge: backend messages + new message (if sent)
+          setMessages(() => {
+            const allMsgs = [...msgs];
+            if (newMsg) {
+              // Don't duplicate if backend already has this message
+              if (!msgs.some((m) => m.id === newMsg!.id)) {
+                allMsgs.push(newMsg);
+              }
+            }
+            return allMsgs;
+          });
+
+          if (newMsg) {
+            lastTimestampRef.current = newMsg.created_at;
+          } else if (msgs.length > 0) {
             lastTimestampRef.current = msgs[msgs.length - 1].created_at;
           }
           return;
@@ -139,8 +161,17 @@ export const WidgetChatScreen = ({
         subject: userFirstMessage,
       });
       setConversationId(conv.id);
-      const msg = await sendMessage(conv.id, userFirstMessage);
-      setMessages([msg]);
+      const msg = await sendMessage(conv.id, userFirstMessage, orgId || undefined);
+      // Replace optimistic local message with real backend message
+      setMessages((prev) => {
+        const localIdx = prev.findIndex((m) => m.id.startsWith("local-"));
+        if (localIdx !== -1) {
+          const updated = [...prev];
+          updated[localIdx] = msg;
+          return updated;
+        }
+        return [msg];
+      });
       lastTimestampRef.current = msg.created_at;
     };
 
@@ -176,6 +207,18 @@ export const WidgetChatScreen = ({
       setUserFirstMessage(content);
       const analysis = detectIntent(content);
       setDetectedIssue(analysis.detectedIssue || "");
+      // Add optimistic local message so user sees their bubble immediately
+      const localMsg: MessageResponse = {
+        id: `local-${Date.now()}`,
+        type: "reply",
+        body: content,
+        sender: null,
+        sender_name: "You",
+        is_from_customer: true,
+        read_at: null,
+        created_at: new Date().toISOString(),
+      };
+      setMessages([localMsg]);
       setGdprStage("concern");
       return;
     }
@@ -184,7 +227,7 @@ export const WidgetChatScreen = ({
 
     setIsSending(true);
     try {
-      const msg = await sendMessage(conversationId, content);
+      const msg = await sendMessage(conversationId, content, orgId || undefined);
       setMessages((prev) => [...prev, msg]);
       lastTimestampRef.current = msg.created_at;
     } catch {} finally {

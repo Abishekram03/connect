@@ -5,31 +5,46 @@ from django.db.models import Q
 from pgvector.django import L2Distance, CosineDistance
 
 from .models import AIConfig, KnowledgeSource, DocumentChunk, AIReplyLog
-from .provider import OpenRouterProvider
+from .provider import OpenRouterProvider, GroqProvider, TemplateProvider
 
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 50
 
+# Embedding model for Groq (doesn't have its own embeddings, use a small local hash fallback)
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
 
 def get_provider(org) -> OpenRouterProvider:
-    """Get an OpenRouter provider for the given organization."""
+    """Get an AI provider for the given organization. Fallback chain: user config -> Groq free -> template."""
     config = AIConfig.objects.filter(organization=org).first()
-    if not config:
-        raise ValueError("AI not configured for this organization")
 
-    api_key = config.provider_api_key
-    if not api_key:
-        raise ValueError("AI API key not configured")
+    # 1. Try user-configured provider
+    if config and config.provider_api_key and config.provider_base_url:
+        return OpenRouterProvider(
+            base_url=config.provider_base_url,
+            api_key=config.provider_api_key,
+            model=config.model_name,
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        )
 
-    return OpenRouterProvider(
-        base_url=config.provider_base_url,
-        api_key=api_key,
-        model=config.model_name,
-        temperature=config.temperature,
-        max_tokens=config.max_tokens,
-    )
+    # 2. Try Groq free tier (set GROQ_API_KEY in env)
+    from django.conf import settings
+    groq_key = getattr(settings, "GROQ_API_KEY", "")
+    if groq_key:
+        model = config.model_name if config and config.model_name else "llama-3.1-8b-instant"
+        return GroqProvider(
+            api_key=groq_key,
+            model=model,
+            temperature=config.temperature if config else 0.3,
+            max_tokens=config.max_tokens if config else 512,
+        )
+
+    # 3. Fallback to template-based (no API key needed)
+    logger.info("No AI API key configured for org %s, using template fallback", org.id)
+    return TemplateProvider()
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
@@ -167,15 +182,23 @@ def generate_reply(
     org,
     query: str,
     conversation_history: list[dict],
-    provider: OpenRouterProvider,
+    provider,
     config: AIConfig,
 ) -> dict:
     """
-    Generate an AI reply using RAG.
-    Returns: {"content": str, "confidence": float, "sources": list, "escalate": bool, "escalation_reason": str}
+    Generate an AI reply using RAG with auto-translation.
+    Detects user language, translates to English for AI, translates reply back.
     """
-    # Retrieve relevant context
-    retrieved = retrieve(org, query, provider, top_k=5, min_score=config.confidence_threshold)
+    from .translation import translate_for_ai, translate_reply_from_ai
+
+    # Auto-detect and translate user message
+    detected_lang, translated_query, original_query = translate_for_ai(query, conversation_history)
+
+    # Retrieve relevant context using translated query
+    try:
+        retrieved = retrieve(org, translated_query, provider, top_k=5, min_score=config.confidence_threshold)
+    except Exception:
+        retrieved = []
 
     # Build context string
     context_parts = []
@@ -190,12 +213,12 @@ def generate_reply(
     avg_score = sum(r["score"] for r in retrieved) / len(retrieved) if retrieved else 0.0
     confidence = avg_score
 
-    # Build messages
+    # Build messages for AI (always in English)
     system_prompt = config.system_prompt or "You are a helpful customer support assistant."
     messages = [
         {
             "role": "system",
-            "content": f"{system_prompt}\n\nUse the following context to answer the customer's question. If the context doesn't contain enough information, say you'll connect them with a human agent. Never make up information.\n\n<context>\n{context}\n</context>",
+            "content": f"{system_prompt}\n\nUse the following context to answer the customer's question. If the context doesn't contain enough information, say you'll connect them with a human agent. Never make up information. Reply in the same language as the customer's message.\n\n<context>\n{context}\n</context>",
         }
     ]
 
@@ -204,13 +227,18 @@ def generate_reply(
         role = "assistant" if not msg.get("is_from_customer", True) else "user"
         messages.append({"role": role, "content": msg["body"]})
 
-    # Add current query
-    messages.append({"role": "user", "content": query})
+    # Add current query (use translated version for better AI understanding)
+    messages.append({"role": "user", "content": translated_query})
 
     # Generate reply
     result = provider.chat(messages)
 
-    # Check for escalation triggers
+    # Translate reply back to user's language
+    ai_reply = result["content"]
+    if detected_lang != "en":
+        ai_reply = translate_reply_from_ai(ai_reply, detected_lang)
+
+    # Check for escalation triggers (use original query for language-specific detection)
     escalate = False
     escalation_reason = ""
 
@@ -219,29 +247,30 @@ def generate_reply(
         escalate = True
         escalation_reason = "low_confidence"
 
-    # Angry detection (simple keyword-based)
+    # Angry detection
     angry_keywords = ["angry", "furious", "terrible", "horrible", "worst", "unacceptable",
                       "frustrated", "frustrating", "waste", "scam", "refund", "cancel",
                       "speak to manager", "human agent", "real person"]
-    if config.escalate_on_angry and any(kw in query.lower() for kw in angry_keywords):
+    if config.escalate_on_angry and any(kw in original_query.lower() for kw in angry_keywords):
         escalate = True
         escalation_reason = "angry_customer"
 
     # Explicit request for human
     human_keywords = ["human agent", "real person", "talk to someone", "speak to someone",
                       "connect me to", "transfer me", "live agent"]
-    if any(kw in query.lower() for kw in human_keywords):
+    if any(kw in original_query.lower() for kw in human_keywords):
         escalate = True
         escalation_reason = "explicit_human_request"
 
     return {
-        "content": result["content"],
+        "content": ai_reply,
         "confidence": confidence,
         "sources": source_ids,
         "escalate": escalate,
         "escalation_reason": escalation_reason,
-        "prompt_tokens": result["prompt_tokens"],
-        "completion_tokens": result["completion_tokens"],
+        "prompt_tokens": result.get("prompt_tokens", 0),
+        "completion_tokens": result.get("completion_tokens", 0),
+        "detected_language": detected_lang,
     }
 
 

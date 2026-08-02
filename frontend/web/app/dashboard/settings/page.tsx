@@ -19,10 +19,10 @@ type Tab = "account" | "general" | "notifications" | "billing";
 export default function SettingsPage() {
   const { user } = useAuth();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>("general");
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<Tab>("account");
 
   const [accountName, setAccountName] = useState(user?.name || "");
+  const [agentLanguage, setAgentLanguage] = useState(user?.language || "en");
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
@@ -41,6 +41,7 @@ export default function SettingsPage() {
     mentionAlert: true,
   });
   const [notifSaving, setNotifSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setAccountName(user?.name || "");
@@ -103,12 +104,16 @@ export default function SettingsPage() {
     }
   };
 
-  const tabs: { key: Tab; label: string; icon: typeof Building2 }[] = [
-    { key: "account", label: "Account", icon: User },
-    { key: "general", label: "General", icon: Building2 },
-    { key: "notifications", label: "Notifications", icon: Bell },
-    { key: "billing", label: "Billing", icon: CreditCard },
+  const allTabs: { key: Tab; label: string; icon: typeof Building2; minRole: string }[] = [
+    { key: "account", label: "Account", icon: User, minRole: "agent" },
+    { key: "general", label: "General", icon: Building2, minRole: "admin" },
+    { key: "notifications", label: "Notifications", icon: Bell, minRole: "agent" },
+    { key: "billing", label: "Billing", icon: CreditCard, minRole: "owner" },
   ];
+
+  const roleHierarchy: Record<string, number> = { agent: 0, admin: 1, owner: 2 };
+  const userRole = user?.role || "agent";
+  const tabs = allTabs.filter((t) => (roleHierarchy[userRole] || 0) >= (roleHierarchy[t.minRole] || 0));
 
   const SaveButton = ({
     saving,
@@ -203,6 +208,53 @@ export default function SettingsPage() {
                     <label className="text-xs font-medium text-muted-foreground">Email</label>
                     <p className="mt-1 text-sm text-ink">{user?.email}</p>
                     <p className="text-xs text-muted-foreground">Email cannot be changed</p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">Chat Language</label>
+                    <p className="text-xs text-muted-foreground mb-2">Customer messages will be auto-translated to this language for you</p>
+                    <div className="flex max-w-md gap-2">
+                      <select
+                        value={agentLanguage}
+                        onChange={(e) => setAgentLanguage(e.target.value)}
+                        className="mt-1 w-full rounded-md border border-border bg-surface px-3 py-2 text-sm text-ink outline-none"
+                      >
+                        <option value="en">English</option>
+                        <option value="es">Spanish (Español)</option>
+                        <option value="fr">French (Français)</option>
+                        <option value="de">German (Deutsch)</option>
+                        <option value="pt">Portuguese (Português)</option>
+                        <option value="hi">Hindi (हिन्दी)</option>
+                        <option value="ar">Arabic (العربية)</option>
+                        <option value="zh">Chinese (中文)</option>
+                        <option value="ja">Japanese (日本語)</option>
+                        <option value="ko">Korean (한국어)</option>
+                        <option value="ru">Russian (Русский)</option>
+                        <option value="it">Italian (Italiano)</option>
+                        <option value="tr">Turkish (Türkçe)</option>
+                        <option value="nl">Dutch (Nederlands)</option>
+                        <option value="pl">Polish (Polski)</option>
+                        <option value="th">Thai (ไทย)</option>
+                        <option value="vi">Vietnamese (Tiếng Việt)</option>
+                        <option value="id">Indonesian (Bahasa Indonesia)</option>
+                        <option value="sv">Swedish (Svenska)</option>
+                        <option value="el">Greek (Ελληνικά)</option>
+                        <option value="cs">Czech (Čeština)</option>
+                      </select>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.patch("/api/auth/me", { language: agentLanguage });
+                            toast.success("Language updated");
+                          } catch {
+                            toast.error("Failed to update language");
+                          }
+                        }}
+                        className="mt-1 shrink-0 rounded-md bg-ink px-4 py-2 text-sm text-primary-foreground"
+                      >
+                        Save
+                      </button>
+                    </div>
                   </div>
 
                   <div className="border-t border-border pt-5">

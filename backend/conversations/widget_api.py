@@ -2,6 +2,7 @@ import uuid
 from django.utils import timezone
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
@@ -13,16 +14,72 @@ from .models import Conversation, Message
 from .serializers import MessageSerializer, ConversationListSerializer
 
 
+class WidgetConfigThrottle(AnonRateThrottle):
+    rate = "30/minute"
+
+
+class WidgetConversationThrottle(AnonRateThrottle):
+    rate = "10/minute"
+
+
+class WidgetMessageThrottle(AnonRateThrottle):
+    rate = "30/minute"
+
+
+class WidgetAutoReplyThrottle(AnonRateThrottle):
+    """Per-IP throttle for AI auto-reply to prevent credit burn."""
+    rate = "20/minute"
+
+
+def _check_session_conversation_limit(org_id, session_token):
+    """Prevent a session from creating more than 1 conversation per 24h (like Intercom)."""
+    if not session_token:
+        return True
+    cache_key = f"widget_conv_limit:{org_id}:{session_token}"
+    count = cache.get(cache_key, 0)
+    if count >= 1:
+        return False
+    cache.set(cache_key, count + 1, timeout=86400)  # 24h
+    return True
+
+
+def _check_org_message_rate(org_id):
+    """Per-org message rate to prevent spam."""
+    cache_key = f"widget_msg_rate:{org_id}"
+    count = cache.get(cache_key, 0)
+    if count >= 100:  # 100 messages/min per org
+        return False
+    cache.set(cache_key, count + 1, timeout=60)
+    return True
+
+
+def _check_org_ai_rate(org_id):
+    """Per-org AI auto-reply rate to protect credits (30/min)."""
+    cache_key = f"widget_ai_rate:{org_id}"
+    count = cache.get(cache_key, 0)
+    if count >= 30:
+        return False
+    cache.set(cache_key, count + 1, timeout=60)
+    return True
+
+
+def _validate_session_token(conversation, session_token):
+    """Verify the session_token matches the conversation."""
+    if not session_token:
+        return False
+    return conversation.session_token == session_token
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle])
+@throttle_classes([WidgetConfigThrottle])
 def widget_config(request):
     org_id = request.query_params.get("organization_id")
     if not org_id:
         return Response({"error": "organization_id is required"}, status=status.HTTP_400_BAD_REQUEST)
     try:
         org = Organization.objects.get(pk=org_id)
-    except Organization.DoesNotExist:
+    except (Organization.DoesNotExist, uuid.UUIDException):
         return Response({"error": "Organization not found"}, status=status.HTTP_404_NOT_FOUND)
 
     wc, _ = WidgetConfig.objects.get_or_create(organization=org)
@@ -49,7 +106,7 @@ def widget_config(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle])
+@throttle_classes([WidgetConversationThrottle])
 def widget_conversations(request):
     if request.method == "GET":
         email = request.query_params.get("email", "").strip().lower()
@@ -80,21 +137,47 @@ def widget_conversations(request):
 
     # POST — create new conversation
     org_id = request.data.get("organization_id")
+    session_token = request.data.get("session_token", "").strip()
     if not org_id:
         return Response({"error": "organization_id is required"}, status=status.HTTP_400_BAD_REQUEST)
     try:
         org = Organization.objects.get(pk=org_id)
-    except Organization.DoesNotExist:
+    except (Organization.DoesNotExist, uuid.UUIDException):
         return Response({"error": "Organization not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Rate limit: 1 conversation per session per 24h
+    if not _check_session_conversation_limit(org_id, session_token):
+        return Response(
+            {"error": "You can only start one conversation every 24 hours. Please continue your existing conversation."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    # Check for existing open conversation for this session
+    if session_token:
+        existing = Conversation.objects.filter(
+            organization=org, session_token=session_token, status__in=["open", "pending"]
+        ).first()
+        if existing:
+            return Response({
+                "id": str(existing.id),
+                "ticket_id": existing.ticket_id,
+                "created_at": existing.created_at.isoformat(),
+                "existing": True,
+            }, status=status.HTTP_200_OK)
+
+    # Validate input lengths
+    customer_name = request.data.get("customer_name", "").strip()[:200]
+    customer_email = request.data.get("customer_email", "").strip().lower()[:254]
+    subject = request.data.get("subject", "").strip()[:500]
 
     conversation = Conversation.objects.create(
         organization=org,
         status="open",
         channel="widget",
-        customer_name=request.data.get("customer_name", "").strip(),
-        customer_email=request.data.get("customer_email", "").strip().lower(),
-        session_token=request.data.get("session_token", "").strip(),
-        subject=request.data.get("subject", ""),
+        customer_name=customer_name,
+        customer_email=customer_email,
+        session_token=session_token,
+        subject=subject,
     )
 
     return Response({
@@ -106,12 +189,36 @@ def widget_conversations(request):
 
 @api_view(["GET", "POST"])
 @permission_classes([AllowAny])
-@throttle_classes([AnonRateThrottle])
+@throttle_classes([WidgetMessageThrottle])
 def conversation_messages(request, pk):
     try:
         conversation = Conversation.objects.get(pk=pk)
-    except Conversation.DoesNotExist:
+    except (Conversation.DoesNotExist, uuid.UUIDException):
         return Response({"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Verify caller owns this conversation via session_token
+    session_token = request.data.get("session_token", "").strip() if request.method == "POST" else request.query_params.get("session_token", "").strip()
+    email = request.query_params.get("email", "").strip().lower()
+
+    if not session_token and not email and not request.user.is_authenticated:
+        return Response({"error": "session_token or email required"}, status=status.HTTP_403_FORBIDDEN)
+
+    if session_token:
+        if not _validate_session_token(conversation, session_token):
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+    elif email:
+        if conversation.customer_email.lower() != email:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+    elif not request.user.is_authenticated:
+        return Response({"error": "session_token or email required"}, status=status.HTTP_403_FORBIDDEN)
+
+    # Org-level message rate limit
+    org_id = str(conversation.organization_id)
+    if not _check_org_message_rate(org_id):
+        return Response(
+            {"error": "Message rate limit exceeded. Please wait before sending more messages."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
 
     if request.method == "GET":
         since = request.query_params.get("since")
@@ -125,12 +232,36 @@ def conversation_messages(request, pk):
     body = request.data.get("body", "").strip()
     if not body:
         return Response({"error": "body is required"}, status=status.HTTP_400_BAD_REQUEST)
+    body = body[:5000]
+
+    # Detect language of customer message
+    detected_lang = "en"
+    try:
+        from ai_service.translation import detect_language
+        detected_lang = detect_language(body)
+    except Exception:
+        pass
+
+    # Translate inbound customer message to English for the agent
+    original_body = ""
+    translated_body = body
+    if detected_lang and detected_lang != "en":
+        try:
+            from ai_service.translation import translate_text
+            translated = translate_text(body, detected_lang, "en")
+            if translated and translated != body:
+                original_body = body
+                translated_body = translated
+        except Exception:
+            pass
 
     message = Message.objects.create(
         conversation=conversation,
         type="reply",
-        body=body,
+        body=translated_body,
+        original_body=original_body,
         is_from_customer=True,
+        detected_language=detected_lang,
     )
 
     conversation.last_message_at = timezone.now()
@@ -144,42 +275,45 @@ def conversation_messages(request, pk):
 
         ai_config = AIConfig.objects.filter(organization=conversation.organization).first()
         if ai_config and ai_config.auto_reply_enabled:
-            # Check max AI turns
-            ai_turn_count = Message.objects.filter(
-                conversation=conversation, is_from_customer=False, sender__isnull=True
-            ).count()
+            # Per-org AI rate limit
+            if not _check_org_ai_rate(org_id):
+                ai_reply_data = {"escalate": True, "reason": "rate_limit_exceeded"}
+            else:
+                ai_turn_count = Message.objects.filter(
+                    conversation=conversation, is_from_customer=False, sender__isnull=True
+                ).count()
 
-            if ai_turn_count < ai_config.max_ai_turns:
-                provider = get_provider(conversation.organization)
-                history = list(
-                    conversation.messages.filter(type="reply")
-                    .order_by("created_at")
-                    .values("body", "is_from_customer")
-                )
-                result = generate_reply(
-                    conversation.organization, body, history, provider, ai_config
-                )
-
-                if not result["escalate"]:
-                    ai_message = Message.objects.create(
-                        conversation=conversation,
-                        type="reply",
-                        body=result["content"],
-                        sender=None,
-                        is_from_customer=False,
+                if ai_turn_count < ai_config.max_ai_turns:
+                    provider = get_provider(conversation.organization)
+                    history = list(
+                        conversation.messages.filter(type="reply")
+                        .order_by("created_at")
+                        .values("body", "is_from_customer")
                     )
-                    conversation.last_message_at = timezone.now()
-                    conversation.save(update_fields=["last_message_at"])
-                    ai_reply_data = {
-                        "id": str(ai_message.id),
-                        "body": result["content"],
-                        "confidence": result["confidence"],
-                    }
-                else:
-                    ai_reply_data = {
-                        "escalate": True,
-                        "reason": result["escalation_reason"],
-                    }
+                    result = generate_reply(
+                        conversation.organization, body, history, provider, ai_config
+                    )
+
+                    if not result["escalate"]:
+                        ai_message = Message.objects.create(
+                            conversation=conversation,
+                            type="reply",
+                            body=result["content"],
+                            sender=None,
+                            is_from_customer=False,
+                        )
+                        conversation.last_message_at = timezone.now()
+                        conversation.save(update_fields=["last_message_at"])
+                        ai_reply_data = {
+                            "id": str(ai_message.id),
+                            "body": result["content"],
+                            "confidence": result["confidence"],
+                        }
+                    else:
+                        ai_reply_data = {
+                            "escalate": True,
+                            "reason": result["escalation_reason"],
+                        }
     except Exception:
         pass  # Don't break the widget flow if AI fails
 

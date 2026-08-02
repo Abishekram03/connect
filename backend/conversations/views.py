@@ -112,13 +112,38 @@ def create_message(request, pk):
     serializer = MessageCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
+    body = serializer.validated_data["body"]
+    msg_type = serializer.validated_data["type"]
+
     message = Message.objects.create(
         conversation=conversation,
-        type=serializer.validated_data["type"],
-        body=serializer.validated_data["body"],
+        type=msg_type,
+        body=body,
         sender=request.user,
         is_from_customer=False,
     )
+
+    # ALWAYS translate outbound reply to customer's detected language
+    # The customer always receives messages in their language
+    if msg_type == "reply":
+        last_customer_msg = Message.objects.filter(
+            conversation=conversation, is_from_customer=True, detected_language__isnull=False
+        ).exclude(detected_language="").order_by("-created_at").first()
+
+        if last_customer_msg and last_customer_msg.detected_language and last_customer_msg.detected_language != "en":
+            try:
+                from ai_service.translation import translate_text
+                agent_lang = getattr(request.user, "language", "en") or "en"
+
+                if agent_lang != last_customer_msg.detected_language:
+                    translated = translate_text(body, agent_lang, last_customer_msg.detected_language)
+                    if translated != body:
+                        message.original_body = body
+                        message.body = translated
+                        message.detected_language = last_customer_msg.detected_language
+                        message.save(update_fields=["body", "original_body", "detected_language"])
+            except Exception:
+                pass
 
     conversation.last_message_at = timezone.now()
     conversation.save(update_fields=["last_message_at"])

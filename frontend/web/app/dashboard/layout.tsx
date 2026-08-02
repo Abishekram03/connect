@@ -26,13 +26,19 @@ import { teamsApi, type UserOrg } from "@/lib/teams-service";
 import { storeUser } from "@/lib/auth-service";
 
 const navItems = [
-  { icon: Inbox, label: "Inbox", href: "/dashboard/inbox" },
-  { icon: Bot, label: "AI", href: "/dashboard/ai" },
-  { icon: BookOpen, label: "Knowledge", href: "/dashboard/knowledge" },
-  { icon: BarChart3, label: "Insights", href: "/dashboard/insights" },
-  { icon: Palette, label: "Widget", href: "/dashboard/widget" },
-  { icon: Users, label: "Teams", href: "/dashboard/teams" },
+  { icon: Inbox, label: "Inbox", href: "/dashboard/inbox", minRole: "agent" },
+  { icon: Bot, label: "AI", href: "/dashboard/ai", minRole: "admin" },
+  { icon: BookOpen, label: "Knowledge", href: "/dashboard/knowledge", minRole: "admin" },
+  { icon: BarChart3, label: "Insights", href: "/dashboard/insights", minRole: "admin" },
+  { icon: Palette, label: "Widget", href: "/dashboard/widget", minRole: "admin" },
+  { icon: Users, label: "Teams", href: "/dashboard/teams", minRole: "agent" },
 ];
+
+const roleHierarchy: Record<string, number> = { agent: 0, admin: 1, owner: 2 };
+
+function hasAccess(userRole: string, minRole: string): boolean {
+  return (roleHierarchy[userRole] || 0) >= (roleHierarchy[minRole] || 0);
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -54,6 +60,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
     if (!user.organization && pathname !== "/dashboard/workspace-setup") {
       router.push("/dashboard/workspace-setup");
+    }
+    // Role-based page access control
+    const restrictedItem = navItems.find((item) => pathname?.startsWith(item.href));
+    if (restrictedItem && !hasAccess(user.role, restrictedItem.minRole)) {
+      router.push("/dashboard/inbox");
     }
   }, [user, loading, router, pathname]);
 
@@ -213,7 +224,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Nav items */}
         <nav className={`flex flex-1 flex-col gap-1 px-3 ${sidebarExpanded ? "" : "items-center"}`}>
-          {navItems.map(({ icon: Icon, label, href }) => {
+          {navItems
+            .filter((item) => hasAccess(user.role, item.minRole))
+            .map(({ icon: Icon, label, href }) => {
             const isActive = pathname === href || pathname?.startsWith(href);
             return (
               <Link
@@ -367,7 +380,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             )}
 
             <nav className="space-y-1">
-              {navItems.map(({ icon: Icon, label, href }) => {
+              {navItems
+                .filter((item) => hasAccess(user.role, item.minRole))
+                .map(({ icon: Icon, label, href }) => {
                 const isActive = pathname === href || pathname?.startsWith(href);
                 return (
                   <Link
@@ -415,7 +430,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Mobile bottom nav */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 flex items-center justify-around border-t border-border bg-card px-2 py-1.5 md:hidden">
-        {navItems.slice(0, 5).map(({ icon: Icon, label, href }) => {
+        {navItems
+          .filter((item) => hasAccess(user.role, item.minRole))
+          .slice(0, 5)
+          .map(({ icon: Icon, label, href }) => {
           const isActive = pathname === href || pathname?.startsWith(href);
           return (
             <Link
@@ -432,7 +450,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </Link>
           );
         })}
-        {navItems.length > 5 && (
+        {navItems.filter((item) => hasAccess(user.role, item.minRole)).length > 5 && (
           <button
             onClick={() => setMobileMenuOpen(true)}
             className="flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-muted-foreground"

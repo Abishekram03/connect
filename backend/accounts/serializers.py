@@ -63,7 +63,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "email", "name", "role", "status", "organization", "date_joined"]
+        fields = ["id", "email", "name", "role", "status", "organization", "language", "date_joined"]
 
 
 class SendCodeSerializer(serializers.Serializer):
@@ -102,3 +102,13 @@ class SetupWorkspaceSerializer(serializers.Serializer):
 
 class InviteSerializer(serializers.Serializer):
     email = serializers.EmailField()
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    token = serializers.CharField(min_length=10)
+    email = serializers.EmailField()
+    new_password = serializers.CharField(min_length=8)

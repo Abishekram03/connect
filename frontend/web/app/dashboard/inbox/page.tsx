@@ -49,6 +49,7 @@ export default function InboxPage() {
   const [showDetails, setShowDetails] = useState(true);
   const [autoTranslate, setAutoTranslate] = useState(false);
   const [translateToast, setTranslateToast] = useState<{ show: boolean; lang: string }>({ show: false, lang: "" });
+  const [showOriginals, setShowOriginals] = useState<Set<string>>(new Set());
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -336,6 +337,26 @@ export default function InboxPage() {
   };
 
   const customerLang = (() => {
+    // First, try to get language from the last customer message's detected_language
+    if (messages.length > 0) {
+      const lastCustomerMsg = [...messages].reverse().find((m) => m.is_from_customer && m.detected_language);
+      if (lastCustomerMsg?.detected_language && lastCustomerMsg.detected_language !== "en") {
+        const langMap: Record<string, { code: string; name: string }> = {
+          es: { code: "es", name: "Spanish" }, fr: { code: "fr", name: "French" },
+          de: { code: "de", name: "German" }, pt: { code: "pt", name: "Portuguese" },
+          hi: { code: "hi", name: "Hindi" }, ar: { code: "ar", name: "Arabic" },
+          zh: { code: "zh", name: "Chinese" }, ja: { code: "ja", name: "Japanese" },
+          ko: { code: "ko", name: "Korean" }, ru: { code: "ru", name: "Russian" },
+          it: { code: "it", name: "Italian" }, tr: { code: "tr", name: "Turkish" },
+          nl: { code: "nl", name: "Dutch" }, pl: { code: "pl", name: "Polish" },
+          th: { code: "th", name: "Thai" }, vi: { code: "vi", name: "Vietnamese" },
+          id: { code: "id", name: "Indonesian" }, sv: { code: "sv", name: "Swedish" },
+          el: { code: "el", name: "Greek" }, cs: { code: "cs", name: "Czech" },
+        };
+        return langMap[lastCustomerMsg.detected_language] || { code: lastCustomerMsg.detected_language, name: lastCustomerMsg.detected_language };
+      }
+    }
+    // Fallback to location-based detection
     if (!activeConvo?.location) return null;
     const loc = activeConvo.location.toLowerCase();
     if (loc.includes("germany") || loc.includes("hamburg") || loc.includes("berlin")) return { code: "de", name: "German" };
@@ -366,7 +387,7 @@ export default function InboxPage() {
         <div className="flex items-center gap-2 rounded-lg border border-accent/25 bg-white px-4 py-2 shadow-lg">
           <Languages className="h-4 w-4 text-accent" />
           <span className="text-sm font-medium text-ink">
-            Auto translated to <span className="text-accent font-semibold">{translateToast.lang}</span>
+            <span className="text-accent font-semibold">{translateToast.lang}</span>
           </span>
         </div>
       </div>
@@ -660,12 +681,29 @@ export default function InboxPage() {
 
                   {/* Auto-translate toggle */}
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const next = !autoTranslate;
+                      const langName = customerLang?.name || "detected language";
+                      if (next) {
+                        const ok = await confirm({
+                          title: "Enable auto-translation",
+                          message: `Enable auto-translation for this conversation? Messages will be translated from ${langName} to English and vice versa.`,
+                          confirmLabel: "Enable",
+                        });
+                        if (!ok) return;
+                      } else {
+                        const ok = await confirm({
+                          title: "Disable auto-translation",
+                          message: "Disable auto-translation? Messages will no longer be translated automatically.",
+                          confirmLabel: "Disable",
+                          variant: "warning",
+                        });
+                        if (!ok) return;
+                      }
                       setAutoTranslate(next);
                       if (next) {
-                        const langName = customerLang?.name || "detected language";
-                        setTranslateToast({ show: true, lang: langName });
+                        const langCode = customerLang?.code?.toUpperCase() || "??";
+                        setTranslateToast({ show: true, lang: `${langName} (${langCode}) → English` });
                         setTimeout(() => setTranslateToast((t) => ({ ...t, show: false })), 3000);
                       }
                     }}
@@ -674,15 +712,17 @@ export default function InboxPage() {
                         ? "bg-accent/15 text-accent"
                         : "text-muted-foreground hover:bg-surface-2 hover:text-ink"
                     }`}
-                    title="Auto-translate"
+                    title={autoTranslate ? "Showing English (click to show customer language)" : "Showing customer language (click to show English)"}
                   >
                     <Languages className="h-3.5 w-3.5" />
                     {customerLang && (
-                      <span className="text-[10px] uppercase font-semibold">{customerLang.code}</span>
+                      <span className="text-[10px] uppercase font-semibold">
+                        {autoTranslate ? "EN" : customerLang.code}
+                      </span>
                     )}
                     {autoTranslate && customerLang && (
                       <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700 whitespace-nowrap">
-                        {customerLang.code.toUpperCase()}→EN
+                        EN↔{customerLang.code.toUpperCase()}
                       </span>
                     )}
                   </button>
@@ -740,7 +780,59 @@ export default function InboxPage() {
                                 : msg.type !== "note" && (first && last ? "rounded-2xl" : first ? "rounded-t-2xl rounded-bl-2xl rounded-br-md" : last ? "rounded-b-2xl rounded-tr-md rounded-tl-2xl" : "rounded-l-2xl rounded-br-md rounded-tr-md")
                             }`}
                           >
-                            <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
+                            {(() => {
+                              const isTranslated = !!(msg.original_body && msg.detected_language);
+                              const flipped = showOriginals.has(msg.id);
+
+                              let displayBody: string;
+                              if (!isTranslated) {
+                                displayBody = msg.body;
+                              } else {
+                                // Inbound: body=English, original_body=Customer lang
+                                // Outbound: body=Customer lang, original_body=English
+                                // ON = show English, OFF = show customer language
+                                const showEnglish = flipped ? !autoTranslate : autoTranslate;
+                                if (msg.is_from_customer) {
+                                  displayBody = showEnglish ? msg.body : msg.original_body;
+                                } else {
+                                  displayBody = showEnglish ? msg.original_body : msg.body;
+                                }
+                              }
+
+                              return (
+                                <>
+                                  <p className="text-sm whitespace-pre-wrap">{displayBody}</p>
+                                  {isTranslated && (
+                                    <button
+                                      onClick={() => {
+                                        setShowOriginals((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(msg.id)) next.delete(msg.id);
+                                          else next.add(msg.id);
+                                          return next;
+                                        });
+                                      }}
+                                      className="mt-1 flex items-center gap-1 text-[9px] font-medium text-accent hover:text-accent/80 transition-colors"
+                                    >
+                                      <Languages className="h-2.5 w-2.5" />
+                                      {(() => {
+                                        const showEnglish = flipped ? !autoTranslate : autoTranslate;
+                                        if (showEnglish) {
+                                          return flipped ? "Show translated" : "Show original";
+                                        }
+                                        return flipped ? "Show English" : `Show in ${msg.detected_language.toUpperCase()}`;
+                                      })()}
+                                      <span className="text-muted-foreground/60">
+                                        ({(() => {
+                                          const showEnglish = flipped ? !autoTranslate : autoTranslate;
+                                          return showEnglish ? (msg.is_from_customer ? "EN" : msg.detected_language.toUpperCase()) : (msg.is_from_customer ? msg.detected_language.toUpperCase() : "EN");
+                                        })()})
+                                      </span>
+                                    </button>
+                                  )}
+                                </>
+                              );
+                            })()}
                             <div className="flex items-center justify-end gap-1 mt-1">
                               {msg.is_from_customer && msg.read_at && isFinal && (
                                 <span className="text-[9px] font-medium text-accent">Seen</span>

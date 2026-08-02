@@ -14,6 +14,14 @@ class AIConfigSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Mask API key on read — only send it back if the client just wrote it
+        if instance.provider_api_key:
+            key = instance.provider_api_key
+            data["provider_api_key"] = key[:4] + "****" + key[-4:] if len(key) > 8 else "****"
+        return data
+
 
 class AIConfigPublicSerializer(serializers.ModelSerializer):
     """Serializer for widget — hides API key and provider URL."""

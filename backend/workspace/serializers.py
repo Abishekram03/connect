@@ -7,6 +7,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Organization
         fields = ["id", "name", "slug", "timezone", "plan", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "plan"]
 
 
 class BrandingSerializer(serializers.ModelSerializer):
