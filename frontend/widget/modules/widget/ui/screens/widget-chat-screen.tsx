@@ -19,7 +19,13 @@ import { detectIntent } from "../../../../lib/intent-detection";
 import { GreetingMessage } from "../components/greeting-message";
 import { ConcernMessage } from "../components/concern-message";
 import { DataCollectionForm } from "../components/data-collection-form";
-import { startConversation, sendMessage, fetchMessages, fetchConversations, type MessageResponse } from "../../../../lib/widget-api";
+import {
+  startConversation,
+  sendMessage,
+  fetchMessages,
+  fetchConversations,
+  type MessageResponse,
+} from "../../../../lib/widget-api";
 
 const EmojiPicker = dynamic(() => import("emoji-picker-react"), {
   ssr: false,
@@ -29,9 +35,7 @@ interface Props {
   mode?: "preview" | "production";
 }
 
-export const WidgetChatScreen = ({
-  mode = "production",
-}: Props) => {
+export const WidgetChatScreen = ({ mode = "production" }: Props) => {
   const setScreen = useSetAtom(screenAtom);
   const setConversationId = useSetAtom(conversationIdAtom);
   const orgId = useAtomValue(organizationIdAtom);
@@ -49,9 +53,9 @@ export const WidgetChatScreen = ({
   const [initialLoading, setInitialLoading] = useState(!!conversationId);
   const lastTimestampRef = useRef<string>("");
 
-  const [gdprStage, setGdprStage] = useState<"greeting" | "chat" | "concern" | "form" | "confirmed">(
-    conversationId ? "chat" : "greeting"
-  );
+  const [gdprStage, setGdprStage] = useState<
+    "greeting" | "chat" | "concern" | "form" | "confirmed"
+  >(conversationId ? "chat" : "greeting");
   const [detectedIssue, setDetectedIssue] = useState<string>("");
   const [userFirstMessage, setUserFirstMessage] = useState<string>("");
   const [customerName, setCustomerName] = useState("");
@@ -62,16 +66,38 @@ export const WidgetChatScreen = ({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const convStartedRef = useRef(false);
 
+  const dedupeMessages = (items: MessageResponse[]) => {
+    const seen = new Set<string>();
+    const unique: MessageResponse[] = [];
+
+    for (const item of items) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      unique.push(item);
+    }
+
+    return unique;
+  };
+
+  const mergeMessages = (
+    existing: MessageResponse[],
+    incoming: MessageResponse[],
+  ) => dedupeMessages([...existing, ...incoming]);
+
   // Load existing messages when viewing a past conversation
   useEffect(() => {
     if (!conversationId || !isHistorical || messages.length > 0) return;
-    fetchMessages(conversationId, undefined, orgId).then((msgs) => {
-      setMessages(msgs);
-      if (msgs.length > 0) {
-        lastTimestampRef.current = msgs[msgs.length - 1].created_at;
-      }
-      setInitialLoading(false);
-    }).catch(() => setInitialLoading(false));
+    fetchMessages(conversationId, undefined, orgId)
+      .then((msgs) => {
+        const uniqueMsgs = dedupeMessages(msgs);
+        setMessages(uniqueMsgs);
+        if (uniqueMsgs.length > 0) {
+          lastTimestampRef.current =
+            uniqueMsgs[uniqueMsgs.length - 1].created_at;
+        }
+        setInitialLoading(false);
+      })
+      .catch(() => setInitialLoading(false));
   }, [conversationId, isHistorical]);
 
   // Poll for new messages (agent replies from dashboard)
@@ -110,7 +136,13 @@ export const WidgetChatScreen = ({
 
   // Create conversation + send first message when GDPR flow completes
   useEffect(() => {
-    if (gdprStage !== "chat" || convStartedRef.current || !userFirstMessage || !orgId) return;
+    if (
+      gdprStage !== "chat" ||
+      convStartedRef.current ||
+      !userFirstMessage ||
+      !orgId
+    )
+      return;
     convStartedRef.current = true;
 
     const email = customerEmail || storedEmail || "";
@@ -129,26 +161,48 @@ export const WidgetChatScreen = ({
           let newMsg: MessageResponse | null = null;
           if (userFirstMessage) {
             try {
-              newMsg = await sendMessage(conv.id, userFirstMessage, orgId || undefined);
+              newMsg = await sendMessage(
+                conv.id,
+                userFirstMessage,
+                orgId || undefined,
+              );
             } catch {}
           }
 
-          // Merge: backend messages + new message (if sent)
+          // Merge: backend messages + new message (if sent) + AI reply
           setMessages(() => {
-            const allMsgs = [...msgs];
+            const allMsgs = [...dedupeMessages(msgs)];
             if (newMsg) {
-              // Don't duplicate if backend already has this message
               if (!msgs.some((m) => m.id === newMsg!.id)) {
                 allMsgs.push(newMsg);
               }
+              if (newMsg.ai_reply && newMsg.ai_reply.body) {
+                const aiMsg: MessageResponse = {
+                  id: newMsg.ai_reply.id,
+                  type: "reply",
+                  body: newMsg.ai_reply.body,
+                  original_body: newMsg.ai_reply.original_body || "",
+                  detected_language: newMsg.ai_reply.detected_language || "",
+                  sender: null,
+                  sender_name: "AI Assistant",
+                  is_from_customer: false,
+                  read_at: null,
+                  created_at: new Date().toISOString(),
+                };
+                if (!allMsgs.some((m) => m.id === aiMsg.id)) {
+                  allMsgs.push(aiMsg);
+                }
+              }
             }
-            return allMsgs;
+            return dedupeMessages(allMsgs);
           });
 
           if (newMsg) {
             lastTimestampRef.current = newMsg.created_at;
           } else if (msgs.length > 0) {
-            lastTimestampRef.current = msgs[msgs.length - 1].created_at;
+            const uniqueMsgs = dedupeMessages(msgs);
+            lastTimestampRef.current =
+              uniqueMsgs[uniqueMsgs.length - 1].created_at;
           }
           return;
         }
@@ -161,22 +215,48 @@ export const WidgetChatScreen = ({
         subject: userFirstMessage,
       });
       setConversationId(conv.id);
-      const msg = await sendMessage(conv.id, userFirstMessage, orgId || undefined);
-      // Replace optimistic local message with real backend message
+      const msg = await sendMessage(
+        conv.id,
+        userFirstMessage,
+        orgId || undefined,
+      );
+      // Replace optimistic local message with real backend message + AI reply
       setMessages((prev) => {
         const localIdx = prev.findIndex((m) => m.id.startsWith("local-"));
+        const result: MessageResponse[] = [];
         if (localIdx !== -1) {
-          const updated = [...prev];
-          updated[localIdx] = msg;
-          return updated;
+          result.push(msg);
+        } else {
+          result.push(msg);
         }
-        return [msg];
+        if (msg.ai_reply && msg.ai_reply.body) {
+          result.push({
+            id: msg.ai_reply.id,
+            type: "reply",
+            body: msg.ai_reply.body,
+            original_body: msg.ai_reply.original_body || "",
+            detected_language: msg.ai_reply.detected_language || "",
+            sender: null,
+            sender_name: "AI Assistant",
+            is_from_customer: false,
+            read_at: null,
+            created_at: new Date().toISOString(),
+          });
+        }
+        return dedupeMessages(result);
       });
       lastTimestampRef.current = msg.created_at;
     };
 
     init();
-  }, [gdprStage, orgId, userFirstMessage, customerName, customerEmail, storedEmail]);
+  }, [
+    gdprStage,
+    orgId,
+    userFirstMessage,
+    customerName,
+    customerEmail,
+    storedEmail,
+  ]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -212,6 +292,7 @@ export const WidgetChatScreen = ({
         id: `local-${Date.now()}`,
         type: "reply",
         body: content,
+        original_body: "",
         sender: null,
         sender_name: "You",
         is_from_customer: true,
@@ -225,17 +306,43 @@ export const WidgetChatScreen = ({
 
     if (!conversationId) return;
 
-    setIsSending(true);
+      setIsSending(true);
     try {
-      const msg = await sendMessage(conversationId, content, orgId || undefined);
-      setMessages((prev) => [...prev, msg]);
+      const msg = await sendMessage(
+        conversationId,
+        content,
+        orgId || undefined,
+      );
+      const newMsgs = [msg];
+      // If backend returned an AI auto-reply, add it too
+      if (msg.ai_reply && msg.ai_reply.body) {
+        const aiMsg: MessageResponse = {
+          id: msg.ai_reply.id,
+          type: "reply",
+          body: msg.ai_reply.body,
+          original_body: msg.ai_reply.original_body || "",
+          detected_language: msg.ai_reply.detected_language || "",
+          sender: null,
+          sender_name: "AI Assistant",
+          is_from_customer: false,
+          read_at: null,
+          created_at: new Date().toISOString(),
+        };
+        newMsgs.push(aiMsg);
+      }
+      setMessages((prev) => mergeMessages(prev, newMsgs));
       lastTimestampRef.current = msg.created_at;
-    } catch {} finally {
+    } catch {
+    } finally {
       setIsSending(false);
     }
   };
 
-  const handleDataCollectionSubmit = async (data: { name: string; email: string; consentGiven: boolean }) => {
+  const handleDataCollectionSubmit = async (data: {
+    name: string;
+    email: string;
+    consentGiven: boolean;
+  }) => {
     setIsCreatingLead(true);
     try {
       const normalizedEmail = data.email.trim().toLowerCase();
@@ -244,7 +351,8 @@ export const WidgetChatScreen = ({
       if (data.name) setContactName(data.name.trim());
       if (normalizedEmail) setContactEmail(normalizedEmail);
       setGdprStage("confirmed");
-    } catch {} finally {
+    } catch {
+    } finally {
       setIsCreatingLead(false);
     }
   };
@@ -281,7 +389,9 @@ export const WidgetChatScreen = ({
           </button>
           <div>
             <p className="text-lg font-semibold text-neutral-900">Support</p>
-            <p className="text-[12px] leading-tight text-neutral-500">We typically reply in a few minutes</p>
+            <p className="text-[12px] leading-tight text-neutral-500">
+              We typically reply in a few minutes
+            </p>
           </div>
         </div>
       </div>
@@ -294,7 +404,10 @@ export const WidgetChatScreen = ({
         )}
 
         {showGreeting && (
-          <GreetingMessage agentName="Support Team" primaryColor={widgetConfig.primaryColor} />
+          <GreetingMessage
+            agentName="Support Team"
+            primaryColor={widgetConfig.primaryColor}
+          />
         )}
 
         {messages.map((msg) => (
@@ -308,29 +421,51 @@ export const WidgetChatScreen = ({
                   ? "text-white"
                   : "bg-neutral-100 text-neutral-900"
               }`}
-              style={msg.is_from_customer ? { backgroundColor: widgetConfig.primaryColor } : undefined}
+              style={
+                msg.is_from_customer
+                  ? { backgroundColor: widgetConfig.primaryColor }
+                  : undefined
+              }
             >
               {!msg.is_from_customer && (
-                <p className="mb-1 text-[10px] font-medium text-neutral-500">Agent</p>
+                <p className="mb-1 text-[10px] font-medium text-neutral-500">
+                  Agent
+                </p>
               )}
-              <p className="whitespace-pre-wrap break-words">{msg.body}</p>
+              <p className="whitespace-pre-wrap break-words">
+                {msg.is_from_customer && msg.original_body
+                  ? msg.original_body
+                  : msg.body}
+              </p>
               <p className="mt-1 text-[9px] text-neutral-500">
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {new Date(msg.created_at).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
               </p>
             </div>
           </div>
         ))}
 
         {gdprStage === "concern" && (
-          <ConcernMessage detectedIssue={detectedIssue} primaryColor={widgetConfig.primaryColor} />
+          <ConcernMessage
+            detectedIssue={detectedIssue}
+            primaryColor={widgetConfig.primaryColor}
+          />
         )}
 
         {gdprStage === "form" && (
           <div className="flex justify-start">
-            <div className="w-full rounded-2xl bg-neutral-100 px-3 py-2 shadow-[0_2px_10px_rgb(0_0_0_/_0.08)]" style={{ borderRadius: 16 }}>
-              <p className="mb-1 text-[10px] font-medium text-neutral-500">AI Assistant</p>
+            <div
+              className="w-full rounded-2xl bg-neutral-100 px-3 py-2 shadow-[0_2px_10px_rgb(0_0_0_/_0.08)]"
+              style={{ borderRadius: 16 }}
+            >
+              <p className="mb-1 text-[10px] font-medium text-neutral-500">
+                AI Assistant
+              </p>
               <p className="mb-2 text-sm text-neutral-900">
-                Thanks for the details — could I get your name and email so our team can follow up?
+                Thanks for the details — could I get your name and email so our
+                team can follow up?
               </p>
               <div className="mt-2">
                 <DataCollectionForm
@@ -348,7 +483,8 @@ export const WidgetChatScreen = ({
             <div className="max-w-[85%] rounded-2xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-emerald-900 shadow-[0_2px_10px_rgb(0_0_0_/_0.08)]">
               <p className="text-[11px] font-semibold mb-2">✓ Thank you!</p>
               <p className="text-sm leading-relaxed">
-                Your information has been saved. Our team will reach out to you shortly to help resolve your issue.
+                Your information has been saved. Our team will reach out to you
+                shortly to help resolve your issue.
               </p>
             </div>
           </div>
@@ -403,7 +539,10 @@ export const WidgetChatScreen = ({
               type="submit"
               size="icon"
               className="h-10 w-10 shrink-0 rounded-full border-0"
-              style={{ backgroundColor: widgetConfig.primaryColor, color: "#ffffff" }}
+              style={{
+                backgroundColor: widgetConfig.primaryColor,
+                color: "#ffffff",
+              }}
               disabled={!inputValue.trim() || isSending}
             >
               {isSending ? (

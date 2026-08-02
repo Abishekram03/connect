@@ -10,6 +10,9 @@ class AIConfig(models.Model):
         ("openai/gpt-4o", "GPT-4o"),
         ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet"),
         ("google/gemini-2.0-flash-001", "Gemini 2.0 Flash"),
+        ("groq/llama-3.1-8b-instant", "Llama 3.1 8B (Groq Free)"),
+        ("groq/llama-3.3-70b-versatile", "Llama 3.3 70B (Groq)"),
+        ("groq/mixtral-8x7b-32768", "Mixtral 8x7B (Groq)"),
     ]
 
     EMBEDDING_MODEL_CHOICES = [
@@ -23,8 +26,9 @@ class AIConfig(models.Model):
     )
 
     # Core settings
-    auto_reply_enabled = models.BooleanField(default=False)
-    model_name = models.CharField(max_length=100, choices=MODEL_CHOICES, default="openai/gpt-4o-mini")
+    auto_reply_enabled = models.BooleanField(default=True)
+    reply_generation_enabled = models.BooleanField(default=True)
+    model_name = models.CharField(max_length=100, choices=MODEL_CHOICES, default="groq/llama-3.1-8b-instant")
     embedding_model = models.CharField(max_length=100, choices=EMBEDDING_MODEL_CHOICES, default="openai/text-embedding-3-small")
     temperature = models.FloatField(default=0.3)
     max_tokens = models.IntegerField(default=512)

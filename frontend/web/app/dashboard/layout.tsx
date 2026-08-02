@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   Check,
   ArrowLeftRight,
+  Bell,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -24,6 +25,7 @@ import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { teamsApi, type UserOrg } from "@/lib/teams-service";
 import { storeUser } from "@/lib/auth-service";
+import { NotificationBell } from "@/components/notification-bell";
 
 const navItems = [
   { icon: Inbox, label: "Inbox", href: "/dashboard/inbox", minRole: "agent" },
@@ -267,20 +269,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {sidebarExpanded && <span className="text-sm font-medium">Settings</span>}
           </Link>
 
-          <div className="relative">
-            <button
-              onClick={() => setProfileOpen(!profileOpen)}
-              className={`flex h-10 items-center gap-3 overflow-hidden rounded-full transition-colors hover:bg-surface-2 ${
-                sidebarExpanded ? "w-full px-2" : "w-10 justify-center"
-              }`}
-            >
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-foreground">
-                {initials}
-              </div>
-              {sidebarExpanded && (
-                <span className="text-xs font-medium text-ink truncate">{user.name || user.email}</span>
-              )}
-            </button>
+          <div className={`flex items-center ${sidebarExpanded ? "gap-1" : "flex-col gap-1"}`}>
+            <NotificationBell />
+            <div className="relative">
+              <button
+                onClick={() => setProfileOpen(!profileOpen)}
+                className={`flex h-10 items-center gap-3 overflow-hidden rounded-full transition-colors hover:bg-surface-2 ${
+                  sidebarExpanded ? "w-full px-2" : "w-10 justify-center"
+                }`}
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-foreground">
+                  {initials}
+                </div>
+                {sidebarExpanded && (
+                  <span className="text-xs font-medium text-ink truncate">{user.name || user.email}</span>
+                )}
+              </button>
 
           {profileOpen && (
             <>
@@ -300,7 +304,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </div>
             </>
           )}
-        </div>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -312,12 +317,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <Link href="/dashboard/inbox" className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink text-xs font-bold text-white">
           {currentOrgInitials}
         </Link>
-        <button
-          onClick={() => setProfileOpen(!profileOpen)}
-          className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-accent text-xs font-medium text-accent-foreground"
-        >
-          {initials}
-        </button>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <button
+            onClick={() => setProfileOpen(!profileOpen)}
+            className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-accent text-xs font-medium text-accent-foreground"
+          >
+            {initials}
+          </button>
+        </div>
       </div>
 
       {/* Mobile drawer overlay */}

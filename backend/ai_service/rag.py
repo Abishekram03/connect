@@ -35,6 +35,9 @@ def get_provider(org) -> OpenRouterProvider:
     groq_key = getattr(settings, "GROQ_API_KEY", "")
     if groq_key:
         model = config.model_name if config and config.model_name else "llama-3.1-8b-instant"
+        # Strip provider prefix (e.g. "groq/llama-3.1-8b-instant" -> "llama-3.1-8b-instant")
+        if "/" in model:
+            model = model.split("/", 1)[1]
         return GroqProvider(
             api_key=groq_key,
             model=model,
@@ -184,14 +187,16 @@ def generate_reply(
     conversation_history: list[dict],
     provider,
     config: AIConfig,
+    agent_language: str = "en",
 ) -> dict:
     """
     Generate an AI reply using RAG with auto-translation.
-    Detects user language, translates to English for AI, translates reply back.
+    Detects customer language, translates to English for AI understanding,
+    generates reply in agent's language, then translates to customer's language.
     """
     from .translation import translate_for_ai, translate_reply_from_ai
 
-    # Auto-detect and translate user message
+    # Auto-detect and translate customer message to English for AI understanding
     detected_lang, translated_query, original_query = translate_for_ai(query, conversation_history)
 
     # Retrieve relevant context using translated query
@@ -213,12 +218,13 @@ def generate_reply(
     avg_score = sum(r["score"] for r in retrieved) / len(retrieved) if retrieved else 0.0
     confidence = avg_score
 
-    # Build messages for AI (always in English)
+    # Build messages for AI — generate in agent's language
     system_prompt = config.system_prompt or "You are a helpful customer support assistant."
+    lang_instruction = f"ALWAYS reply in {agent_language} only." if agent_language != "en" else "ALWAYS reply in English only."
     messages = [
         {
             "role": "system",
-            "content": f"{system_prompt}\n\nUse the following context to answer the customer's question. If the context doesn't contain enough information, say you'll connect them with a human agent. Never make up information. Reply in the same language as the customer's message.\n\n<context>\n{context}\n</context>",
+            "content": f"{system_prompt}\n\nUse the following context to answer the customer's question. If the context doesn't contain enough information, say you'll connect them with a human agent. Never make up information. {lang_instruction}\n\n<context>\n{context}\n</context>",
         }
     ]
 
@@ -227,16 +233,19 @@ def generate_reply(
         role = "assistant" if not msg.get("is_from_customer", True) else "user"
         messages.append({"role": role, "content": msg["body"]})
 
-    # Add current query (use translated version for better AI understanding)
+    # Add current query (use English translated version for better AI understanding)
     messages.append({"role": "user", "content": translated_query})
 
-    # Generate reply
+    # Generate reply in agent's language
     result = provider.chat(messages)
 
-    # Translate reply back to user's language
-    ai_reply = result["content"]
-    if detected_lang != "en":
-        ai_reply = translate_reply_from_ai(ai_reply, detected_lang)
+    # Store agent-language version (original for inbox)
+    original_reply = result["content"]
+
+    # Translate to customer's language if different
+    ai_reply = original_reply
+    if detected_lang != agent_language:
+        ai_reply = translate_reply_from_ai(original_reply, detected_lang, source_lang=agent_language)
 
     # Check for escalation triggers (use original query for language-specific detection)
     escalate = False
@@ -264,6 +273,7 @@ def generate_reply(
 
     return {
         "content": ai_reply,
+        "original_content": original_reply,
         "confidence": confidence,
         "sources": source_ids,
         "escalate": escalate,

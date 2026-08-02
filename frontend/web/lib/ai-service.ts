@@ -3,6 +3,7 @@ import { api } from "./api-client";
 export interface AIConfig {
   id: string;
   auto_reply_enabled: boolean;
+  reply_generation_enabled: boolean;
   model_name: string;
   embedding_model: string;
   temperature: number;
@@ -46,8 +47,6 @@ export interface AIReplyLog {
   created_at: string;
 }
 
-// ── AI Config ──
-
 export async function fetchAIConfig(): Promise<AIConfig> {
   return api.get("/api/ai/config");
 }
@@ -55,8 +54,6 @@ export async function fetchAIConfig(): Promise<AIConfig> {
 export async function updateAIConfig(data: Partial<AIConfig>): Promise<AIConfig> {
   return api.patch("/api/ai/config", data);
 }
-
-// ── Knowledge Sources ──
 
 export async function fetchSources(): Promise<KnowledgeSource[]> {
   return api.get("/api/ai/sources");
@@ -92,8 +89,6 @@ export async function syncKBToSources(): Promise<{ synced: number }> {
   return api.post("/api/ai/sources/sync-kb");
 }
 
-// ── Agent Copilot ──
-
 export async function suggestReply(conversationId: string): Promise<{ suggestions: string[] }> {
   return api.post("/api/ai/suggest-reply", { conversation_id: conversationId });
 }
@@ -105,8 +100,6 @@ export async function summarizeConversation(conversationId: string): Promise<{ s
 export async function getNextSteps(conversationId: string): Promise<{ steps: string[] }> {
   return api.post("/api/ai/next-steps", { conversation_id: conversationId });
 }
-
-// ── Logs ──
 
 export async function fetchAIReplyLogs(): Promise<AIReplyLog[]> {
   return api.get("/api/ai/logs");

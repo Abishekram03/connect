@@ -6,7 +6,7 @@ class AIConfigSerializer(serializers.ModelSerializer):
     class Meta:
         model = AIConfig
         fields = [
-            "id", "auto_reply_enabled", "model_name", "embedding_model",
+            "id", "auto_reply_enabled", "reply_generation_enabled", "model_name", "embedding_model",
             "temperature", "max_tokens", "system_prompt",
             "escalate_on_angry", "escalate_on_low_confidence", "confidence_threshold",
             "max_ai_turns", "provider_base_url", "provider_api_key",

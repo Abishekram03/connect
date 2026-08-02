@@ -2,6 +2,8 @@ type RequestOptions = RequestInit & {
   params?: Record<string, string>;
 };
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("access_token");
@@ -39,11 +41,14 @@ async function refreshAccessToken(): Promise<string | null> {
   const refresh = getRefreshToken();
   if (!refresh) return null;
 
-  const res = await fetch("/api/auth/refresh", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh }),
-  });
+  const res = await fetch(
+    new URL("/api/auth/refresh", API_BASE_URL).toString(),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh }),
+    },
+  );
 
   if (!res.ok) {
     clearTokens();
@@ -55,7 +60,10 @@ async function refreshAccessToken(): Promise<string | null> {
   return data.access;
 }
 
-async function request<T = any>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T = any>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const { params, ...fetchOptions } = options;
   const token = getAccessToken();
 
@@ -67,11 +75,14 @@ async function request<T = any>(path: string, options: RequestOptions = {}): Pro
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  if (!(fetchOptions.body instanceof FormData)) {
+  if (
+    fetchOptions.body !== undefined &&
+    !(fetchOptions.body instanceof FormData)
+  ) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
   }
 
-  let url = path;
+  let url = new URL(path, API_BASE_URL).toString();
   if (params) {
     const searchParams = new URLSearchParams(params);
     url += `?${searchParams.toString()}`;
@@ -124,5 +135,12 @@ const api = {
     request<T>(path, { ...options, method: "DELETE" }),
 };
 
-export { api, setTokens, clearTokens, getAccessToken, getRefreshToken, ApiError };
+export {
+  api,
+  setTokens,
+  clearTokens,
+  getAccessToken,
+  getRefreshToken,
+  ApiError,
+};
 export type { RequestOptions };

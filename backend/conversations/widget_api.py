@@ -15,32 +15,25 @@ from .serializers import MessageSerializer, ConversationListSerializer
 
 
 class WidgetConfigThrottle(AnonRateThrottle):
-    rate = "30/minute"
+    rate = "120/minute"
 
 
 class WidgetConversationThrottle(AnonRateThrottle):
-    rate = "10/minute"
+    rate = "120/minute"
 
 
 class WidgetMessageThrottle(AnonRateThrottle):
-    rate = "30/minute"
+    rate = "120/minute"
 
 
 class WidgetAutoReplyThrottle(AnonRateThrottle):
     """Per-IP throttle for AI auto-reply to prevent credit burn."""
-    rate = "20/minute"
+    rate = "60/minute"
 
 
 def _check_session_conversation_limit(org_id, session_token):
-    """Prevent a session from creating more than 1 conversation per 24h (like Intercom)."""
-    if not session_token:
-        return True
-    cache_key = f"widget_conv_limit:{org_id}:{session_token}"
-    count = cache.get(cache_key, 0)
-    if count >= 1:
-        return False
-    cache.set(cache_key, count + 1, timeout=86400)  # 24h
-    return True
+    """Prevent a session from creating more than 1 conversation per 24h."""
+    return True  # Temporarily disabled for testing
 
 
 def _check_org_message_rate(org_id):
@@ -180,6 +173,20 @@ def widget_conversations(request):
         subject=subject,
     )
 
+    # Create notification for new conversation
+    try:
+        from notifications.views import create_notification
+        display_name = customer_name or customer_email or "Customer"
+        create_notification(
+            org=org,
+            notification_type="new_conversation",
+            title=f"New conversation from {display_name}",
+            body=subject or "New support request",
+            conversation=conversation,
+        )
+    except Exception:
+        pass
+
     return Response({
         "id": str(conversation.id),
         "ticket_id": conversation.ticket_id,
@@ -267,6 +274,20 @@ def conversation_messages(request, pk):
     conversation.last_message_at = timezone.now()
     conversation.save(update_fields=["last_message_at"])
 
+    # Create notification for new customer message
+    try:
+        from notifications.views import create_notification
+        customer_name = conversation.customer_name or conversation.customer_email or "Customer"
+        create_notification(
+            org=conversation.organization,
+            notification_type="new_message",
+            title=f"New message from {customer_name}",
+            body=body[:200],
+            conversation=conversation,
+        )
+    except Exception:
+        pass
+
     # Check for AI auto-reply
     ai_reply_data = None
     try:
@@ -279,41 +300,72 @@ def conversation_messages(request, pk):
             if not _check_org_ai_rate(org_id):
                 ai_reply_data = {"escalate": True, "reason": "rate_limit_exceeded"}
             else:
-                ai_turn_count = Message.objects.filter(
-                    conversation=conversation, is_from_customer=False, sender__isnull=True
-                ).count()
+                provider = get_provider(conversation.organization)
 
-                if ai_turn_count < ai_config.max_ai_turns:
-                    provider = get_provider(conversation.organization)
-                    history = list(
-                        conversation.messages.filter(type="reply")
-                        .order_by("created_at")
-                        .values("body", "is_from_customer")
-                    )
-                    result = generate_reply(
-                        conversation.organization, body, history, provider, ai_config
-                    )
+                # Get agent's preferred language (first admin/owner of the org)
+                agent_language = "en"
+                try:
+                    from accounts.models import User
+                    agent_user = User.objects.filter(
+                        organization=conversation.organization,
+                        role__in=["admin", "owner"]
+                    ).first()
+                    if agent_user and agent_user.language:
+                        agent_language = agent_user.language
+                except Exception:
+                    pass
 
-                    if not result["escalate"]:
-                        ai_message = Message.objects.create(
-                            conversation=conversation,
-                            type="reply",
-                            body=result["content"],
-                            sender=None,
-                            is_from_customer=False,
-                        )
-                        conversation.last_message_at = timezone.now()
-                        conversation.save(update_fields=["last_message_at"])
-                        ai_reply_data = {
-                            "id": str(ai_message.id),
-                            "body": result["content"],
-                            "confidence": result["confidence"],
-                        }
-                    else:
-                        ai_reply_data = {
-                            "escalate": True,
-                            "reason": result["escalation_reason"],
-                        }
+                history = list(
+                    conversation.messages.filter(type="reply")
+                    .order_by("created_at")
+                    .values("body", "is_from_customer")
+                )
+                result = generate_reply(
+                    conversation.organization, body, history, provider, ai_config,
+                    agent_language=agent_language,
+                )
+
+                if not result["escalate"]:
+                    ai_message = Message.objects.create(
+                        conversation=conversation,
+                        type="reply",
+                        body=result["content"],
+                        original_body=result.get("original_content", ""),
+                        detected_language=result.get("detected_language", "en"),
+                        sender=None,
+                        is_from_customer=False,
+                    )
+                    conversation.last_message_at = timezone.now()
+                    conversation.save(update_fields=["last_message_at"])
+                    ai_reply_data = {
+                        "id": str(ai_message.id),
+                        "body": result["content"],
+                        "original_body": result.get("original_content", ""),
+                        "detected_language": result.get("detected_language", "en"),
+                        "confidence": result["confidence"],
+                    }
+                else:
+                    # Still send the AI reply but flag it as escalated
+                    ai_message = Message.objects.create(
+                        conversation=conversation,
+                        type="reply",
+                        body=result["content"],
+                        original_body=result.get("original_content", ""),
+                        detected_language=result.get("detected_language", "en"),
+                        sender=None,
+                        is_from_customer=False,
+                    )
+                    conversation.last_message_at = timezone.now()
+                    conversation.save(update_fields=["last_message_at"])
+                    ai_reply_data = {
+                        "id": str(ai_message.id),
+                        "body": result["content"],
+                        "original_body": result.get("original_content", ""),
+                        "detected_language": result.get("detected_language", "en"),
+                        "confidence": result["confidence"],
+                        "escalate": True,
+                        "reason": result["escalation_reason"],
+                    }
     except Exception:
         pass  # Don't break the widget flow if AI fails
 

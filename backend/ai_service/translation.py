@@ -67,9 +67,9 @@ def translate_for_ai(query: str, conversation_history: list[dict]) -> tuple[str,
     return detected, translated, query
 
 
-def translate_reply_from_ai(reply: str, target_lang: str) -> str:
-    """Translate AI reply from English back to user's language."""
-    if target_lang == "en" or not reply.strip():
+def translate_reply_from_ai(reply: str, target_lang: str, source_lang: str = "en") -> str:
+    """Translate AI reply from source_lang back to customer's language."""
+    if target_lang == source_lang or not reply.strip():
         return reply
 
-    return translate_text(reply, "en", target_lang)
+    return translate_text(reply, source_lang, target_lang)

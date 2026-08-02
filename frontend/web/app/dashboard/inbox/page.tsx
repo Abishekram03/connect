@@ -89,6 +89,49 @@ export default function InboxPage() {
     copilotEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
 
+  // Auto-refresh polling for conversations
+  useEffect(() => {
+    const pollConversations = async () => {
+      try {
+        const params: Record<string, string> = {};
+        if (filter === "assigned") params.assignee = "me";
+        else if (filter === "unassigned") params.assignee = "unassigned";
+        else if (filter === "closed") params.status = "closed";
+        const res = await fetchConversations(params);
+        setConversations((prev) => {
+          const prevIds = prev.map((c) => c.id).join(",");
+          const newIds = res.results.map((c: any) => c.id).join(",");
+          if (prevIds !== newIds) return res.results;
+          return prev.map((c) => {
+            const updated = res.results.find((r: any) => r.id === c.id);
+            return updated ? { ...c, ...updated } : c;
+          });
+        });
+      } catch {}
+    };
+    const interval = setInterval(pollConversations, 5000);
+    return () => clearInterval(interval);
+  }, [filter]);
+
+  // Auto-refresh polling for active conversation messages
+  useEffect(() => {
+    if (!activeId) return;
+    const pollMessages = async () => {
+      try {
+        const detail = await fetchConversation(activeId);
+        setMessages((prev) => {
+          const prevIds = prev.map((m) => m.id).join(",");
+          const newIds = (detail.messages || []).map((m: any) => m.id).join(",");
+          if (prevIds !== newIds) return detail.messages || [];
+          return prev;
+        });
+        setActiveConvo((prev) => (prev ? { ...prev, ...detail } : prev));
+      } catch {}
+    };
+    const interval = setInterval(pollMessages, 5000);
+    return () => clearInterval(interval);
+  }, [activeId]);
+
   const loadConversations = useCallback(async () => {
     setLoading(true);
     try {
@@ -113,6 +156,26 @@ export default function InboxPage() {
       const detail = await fetchConversation(id);
       setActiveConvo(detail);
       setMessages(detail.messages || []);
+
+      // Auto-translate: read setting from localStorage
+      const autoTranslatePref = typeof window !== "undefined" ? localStorage.getItem("auto_translate") : null;
+      if (autoTranslatePref !== "off") {
+        // Check if any customer message has a detected language that isn't English
+        const hasTranslation = detail.messages?.some(
+          (m: any) => m.is_from_customer && m.detected_language && m.detected_language !== "en"
+        );
+        if (hasTranslation) {
+          const langMsg = [...(detail.messages || [])].reverse().find(
+            (m: any) => m.is_from_customer && m.detected_language && m.detected_language !== "en"
+          );
+          const langCode = langMsg?.detected_language?.toUpperCase() || "??";
+          setAutoTranslate(true);
+          setTranslateToast({ show: true, lang: `Auto-translating: ${langCode} → EN` });
+          setTimeout(() => setTranslateToast((t) => ({ ...t, show: false })), 3000);
+        }
+      } else {
+        setAutoTranslate(false);
+      }
     } catch {
       setActiveConvo(null);
       setMessages([]);
@@ -695,29 +758,12 @@ export default function InboxPage() {
 
                   {/* Auto-translate toggle */}
                   <button
-                    onClick={async () => {
+                    onClick={() => {
                       const next = !autoTranslate;
-                      const langName = customerLang?.name || "detected language";
-                      if (next) {
-                        const ok = await confirm({
-                          title: "Enable auto-translation",
-                          message: `Enable auto-translation for this conversation? Messages will be translated from ${langName} to English and vice versa.`,
-                          confirmLabel: "Enable",
-                        });
-                        if (!ok) return;
-                      } else {
-                        const ok = await confirm({
-                          title: "Disable auto-translation",
-                          message: "Disable auto-translation? Messages will no longer be translated automatically.",
-                          confirmLabel: "Disable",
-                          variant: "warning",
-                        });
-                        if (!ok) return;
-                      }
                       setAutoTranslate(next);
                       if (next) {
                         const langCode = customerLang?.code?.toUpperCase() || "??";
-                        setTranslateToast({ show: true, lang: `${langName} (${langCode}) → English` });
+                        setTranslateToast({ show: true, lang: `Translating: ${langCode} → EN` });
                         setTimeout(() => setTranslateToast((t) => ({ ...t, show: false })), 3000);
                       }
                     }}
@@ -816,34 +862,6 @@ export default function InboxPage() {
                               return (
                                 <>
                                   <p className="text-sm whitespace-pre-wrap">{displayBody}</p>
-                                  {isTranslated && (
-                                    <button
-                                      onClick={() => {
-                                        setShowOriginals((prev) => {
-                                          const next = new Set(prev);
-                                          if (next.has(msg.id)) next.delete(msg.id);
-                                          else next.add(msg.id);
-                                          return next;
-                                        });
-                                      }}
-                                      className="mt-1 flex items-center gap-1 text-[9px] font-medium text-accent hover:text-accent/80 transition-colors"
-                                    >
-                                      <Languages className="h-2.5 w-2.5" />
-                                      {(() => {
-                                        const showEnglish = flipped ? !autoTranslate : autoTranslate;
-                                        if (showEnglish) {
-                                          return flipped ? "Show translated" : "Show original";
-                                        }
-                                        return flipped ? "Show English" : `Show in ${msg.detected_language.toUpperCase()}`;
-                                      })()}
-                                      <span className="text-muted-foreground/60">
-                                        ({(() => {
-                                          const showEnglish = flipped ? !autoTranslate : autoTranslate;
-                                          return showEnglish ? (msg.is_from_customer ? "EN" : msg.detected_language.toUpperCase()) : (msg.is_from_customer ? msg.detected_language.toUpperCase() : "EN");
-                                        })()})
-                                      </span>
-                                    </button>
-                                  )}
                                 </>
                               );
                             })()}

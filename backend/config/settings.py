@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "teams",
     "knowledge_base",
     "ai_service",
+    "notifications",
 ]
 
 MIDDLEWARE = [

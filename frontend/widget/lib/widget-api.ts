@@ -49,11 +49,22 @@ export interface MessageResponse {
   id: string;
   type: string;
   body: string;
+  original_body: string;
+  detected_language?: string;
   sender: string | null;
   sender_name: string;
   is_from_customer: boolean;
   read_at: string | null;
   created_at: string;
+  ai_reply?: {
+    id: string;
+    body: string;
+    original_body: string;
+    detected_language: string;
+    confidence: number;
+    escalate?: boolean;
+    reason?: string;
+  };
 }
 
 export function fetchWidgetConfig(organizationId: string): Promise<WidgetConfigResponse> {
