@@ -97,7 +97,7 @@ def widget_config(request):
     })
 
 
-@api_view(["GET", "POST"])
+@api_view(["GET", "POST", "PATCH"])
 @permission_classes([AllowAny])
 @throttle_classes([WidgetConversationThrottle])
 def widget_conversations(request):
@@ -127,6 +127,45 @@ def widget_conversations(request):
 
         qs = Conversation.objects.filter(q).order_by("-last_message_at")[:20]
         return Response(ConversationListSerializer(qs, many=True).data)
+
+    # PATCH — update conversation customer info (name, email)
+    if request.method == "PATCH":
+        conversation_id = request.data.get("conversation_id")
+        session_token = request.data.get("session_token", "").strip()
+        if not conversation_id:
+            return Response({"error": "conversation_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not session_token:
+            return Response({"error": "session_token is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            conversation = Conversation.objects.get(pk=conversation_id)
+        except (Conversation.DoesNotExist, uuid.UUIDException):
+            return Response({"error": "Conversation not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Verify session token matches
+        if conversation.session_token != session_token:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+
+        # Update fields
+        customer_name = request.data.get("customer_name")
+        customer_email = request.data.get("customer_email")
+        updated_fields = []
+
+        if customer_name is not None:
+            conversation.customer_name = customer_name.strip()[:200]
+            updated_fields.append("customer_name")
+        if customer_email is not None:
+            conversation.customer_email = customer_email.strip().lower()[:254]
+            updated_fields.append("customer_email")
+
+        if updated_fields:
+            conversation.save(update_fields=updated_fields)
+
+        return Response({
+            "id": str(conversation.id),
+            "customer_name": conversation.customer_name,
+            "customer_email": conversation.customer_email,
+        })
 
     # POST — create new conversation
     org_id = request.data.get("organization_id")

@@ -525,7 +525,7 @@ export default function InboxPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-medium text-ink">
-                        {c.customer_name || c.customer_email || "Unknown"}
+                        {c.customer_name || c.customer_email || `Visitor #${c.ticket_id}`}
                       </span>
                       {isLive(c) ? (
                         <span className="flex shrink-0 items-center gap-1 text-[10px] font-medium text-green-600">
@@ -590,7 +590,7 @@ export default function InboxPage() {
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="truncate text-sm font-semibold text-ink">
-                        {activeConvo.customer_name || activeConvo.customer_email || "Unknown"}
+                        {activeConvo.customer_name || activeConvo.customer_email || `Visitor #${activeConvo.ticket_id}`}
                       </span>
                       <span className="shrink-0 text-xs text-muted-foreground">via {activeConvo.channel}</span>
                     </div>
@@ -879,9 +879,15 @@ export default function InboxPage() {
                         {/* Agent avatar — only on last message of group */}
                         {!msg.is_from_customer ? (
                           <div className={`shrink-0 ${last ? "" : "invisible"}`}>
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink/10 text-[9px] font-medium text-muted-foreground">
-                              {msg.sender_name ? getInitials(msg.sender_name) : "A"}
-                            </div>
+                            {msg.sender_name === "Kai" ? (
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-white border border-neutral-200 overflow-hidden">
+                                <img src="/KAI_Logo.png" alt="Kai" className="h-5 w-5 object-contain" />
+                              </div>
+                            ) : (
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink/10 text-[9px] font-medium text-muted-foreground">
+                                {msg.sender_name ? getInitials(msg.sender_name) : "A"}
+                              </div>
+                            )}
                           </div>
                         ) : <div className="w-7" />}
                       </div>
@@ -1153,7 +1159,7 @@ function DetailsContent({ activeConvo, formatTime, teams, agents, onTeamChange, 
           {getInitials(activeConvo.customer_name || activeConvo.customer_email)}
         </div>
         <h4 className="mt-2.5 text-sm font-semibold text-ink">
-          {activeConvo.customer_name || "Unknown"}
+          {activeConvo.customer_name || activeConvo.customer_email || `Visitor #${activeConvo.ticket_id}`}
         </h4>
         {activeConvo.customer_email && (
           <p className="text-xs text-muted-foreground">{activeConvo.customer_email}</p>

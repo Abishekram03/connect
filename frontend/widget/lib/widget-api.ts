@@ -110,6 +110,20 @@ export function fetchConversations(email?: string, orgId?: string): Promise<Conv
   return api(`/api/widget/conversations?${params.toString()}`);
 }
 
+export function updateConversation(conversationId: string, orgId: string, data: {
+  customer_name?: string;
+  customer_email?: string;
+}): Promise<{ id: string; customer_name: string; customer_email: string }> {
+  return api("/api/widget/conversations", {
+    method: "PATCH",
+    body: JSON.stringify({
+      conversation_id: conversationId,
+      session_token: getSessionToken(orgId),
+      ...data,
+    }),
+  });
+}
+
 export function sendMessage(conversationId: string, body: string, orgId?: string): Promise<MessageResponse> {
   return api(`/api/widget/conversations/${conversationId}/messages`, {
     method: "POST",

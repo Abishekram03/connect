@@ -158,8 +158,13 @@ export default function AIPage() {
         {/* Left sidebar — sources */}
         <div className="flex w-full md:w-80 shrink-0 flex-col border-r border-border">
           <div className="flex items-center gap-2 border-b border-border px-3 py-2.5">
-            <Bot className="h-5 w-5 text-accent" />
-            <h2 className="text-sm font-semibold text-ink">AI Training</h2>
+            <div className="flex h-6 w-6 items-center justify-center rounded-full bg-white border border-neutral-200 overflow-hidden">
+              <img src="/KAI_Logo.png" alt="Kai" className="h-4 w-4 object-contain" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Kai AI Assistant</h2>
+              <p className="text-[10px] text-muted-foreground">Training Sources</p>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3">
@@ -242,25 +247,37 @@ export default function AIPage() {
         {/* Right panel — test chat */}
         <div className="flex flex-1 flex-col">
           <div className="flex items-center gap-2.5 border-b border-border px-5 py-3">
-            <Bot className="h-5 w-5 text-accent" />
-            <h2 className="text-sm font-semibold text-ink">AI Test Chat</h2>
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white border border-neutral-200 overflow-hidden">
+              <img src="/KAI_Logo.png" alt="Kai" className="h-3.5 w-3.5 object-contain" />
+            </div>
+            <h2 className="text-sm font-semibold text-ink">Kai Test Chat</h2>
             <span className="text-[11px] text-muted-foreground">(uses indexed sources)</span>
           </div>
 
           <div className="flex-1 overflow-y-auto p-5">
             {testMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Bot className="h-12 w-12 text-muted-foreground/30 mb-3" />
-                <p className="text-sm text-muted-foreground">Ask questions based on your training sources</p>
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-neutral-100 mb-3">
+                  <img src="/KAI_Logo.png" alt="Kai" className="h-8 w-8 object-contain" />
+                </div>
+                <p className="text-sm text-muted-foreground">Ask Kai questions based on your training sources</p>
                 <p className="text-xs text-muted-foreground/60 mt-1">Sources must be indexed first</p>
               </div>
             ) : (
               <div className="space-y-3">
                 {testMessages.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                    {m.role === "assistant" && (
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white border border-neutral-200 overflow-hidden mt-0.5">
+                        <img src="/KAI_Logo.png" alt="Kai" className="h-4 w-4 object-contain" />
+                      </div>
+                    )}
                     <div className={`max-w-[70%] rounded-lg px-4 py-2.5 ${
                       m.role === "user" ? "bg-ink text-primary-foreground" : "bg-surface-2 text-ink"
                     }`}>
+                      {m.role === "assistant" && (
+                        <p className="text-[10px] font-medium text-muted-foreground mb-1">Kai</p>
+                      )}
                       <p className="text-sm whitespace-pre-wrap">{m.text}</p>
                     </div>
                   </div>
