@@ -243,7 +243,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
                 }`}
               >
-                <Icon className="h-5 w-5 shrink-0" />
+                {label === "AI" ? (
+                  <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden">
+                    <img src={isActive ? "/KAI_White.png" : "/KAI_Logo.png"} alt="Kai" className="h-5 w-5 object-contain" />
+                  </div>
+                ) : (
+                  <Icon className="h-5 w-5 shrink-0" />
+                )}
                 {sidebarExpanded && (
                   <span className="text-sm font-medium">{label}</span>
                 )}
@@ -278,8 +284,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   sidebarExpanded ? "w-full px-2" : "w-10 justify-center"
                 }`}
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-foreground">
-                  {initials}
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent text-xs font-medium text-accent-foreground">
+                  {user.avatar_url ? (
+                    <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
+                  ) : initials}
                 </div>
                 {sidebarExpanded && (
                   <span className="text-xs font-medium text-ink truncate">{user.name || user.email}</span>
@@ -323,7 +331,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             onClick={() => setProfileOpen(!profileOpen)}
             className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-accent text-xs font-medium text-accent-foreground"
           >
-            {initials}
+            {user.avatar_url ? (
+              <img src={user.avatar_url} alt="" className="h-full w-full object-cover" />
+            ) : initials}
           </button>
         </div>
       </div>

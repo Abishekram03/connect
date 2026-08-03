@@ -8,6 +8,8 @@ import {
   organizationIdAtom,
   screenAtom,
   widgetConfigAtom,
+  isOpenAtom,
+  articleOpenAtom,
 } from "../../atoms/widget-atoms";
 import { WidgetErrorScreen } from "../screens/widget-error-screen";
 import { WidgetLoadingScreen } from "../screens/widget-loading-screen";
@@ -28,8 +30,10 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
   const setWidgetConfig = useSetAtom(widgetConfigAtom);
   const setOrganizationId = useSetAtom(organizationIdAtom);
   const setScreen = useSetAtom(screenAtom);
+  const setIsOpen = useSetAtom(isOpenAtom);
   const widgetConfig = useAtomValue(widgetConfigAtom);
   const footerVisible = useAtomValue(footerVisibleAtom);
+  const articleOpen = useAtomValue(articleOpenAtom);
 
   useEffect(() => {
     if (organizationId) {
@@ -81,10 +85,19 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
       ) {
         setWidgetConfig((prev) => ({ ...prev, ...payload }));
       }
+
+      // Handle open/close/toggle from embed script
+      if (type === "connect:open") {
+        setIsOpen(true);
+      } else if (type === "connect:close") {
+        setIsOpen(false);
+      } else if (type === "connect:toggle") {
+        setIsOpen((prev) => !prev);
+      }
     };
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [setWidgetConfig]);
+  }, [setWidgetConfig, setIsOpen]);
 
   // Send config to parent (for launcher styling)
   useEffect(() => {
@@ -107,6 +120,16 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
     widgetConfig.position,
     widgetConfig.borderRadius,
   ]);
+
+  // Notify parent when article opens/closes (for widget resize)
+  useEffect(() => {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        { type: articleOpen ? "connect:article-open" : "connect:article-close" },
+        "*",
+      );
+    }
+  }, [articleOpen]);
 
   const screenComponents: Record<string, JSX.Element> = {
     error: <WidgetErrorScreen />,

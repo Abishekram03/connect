@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api-client";
-import { playNotificationSound } from "@/lib/notification-sound";
+import { playNotificationSound, playEscalationSound } from "@/lib/notification-sound";
 
 export interface Notification {
   id: number;
-  type: "new_conversation" | "new_message" | "assignment" | "mention";
+  type: "new_conversation" | "new_message" | "assignment" | "mention" | "escalation";
   title: string;
   body: string;
   conversation_id: number | null;
@@ -19,8 +19,7 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const lastCheckRef = useRef<string>(new Date().toISOString());
-  const prevCountRef = useRef(0);
-  const soundEnabled = useRef(true);
+  const isFirstCheck = useRef(true);
 
   const checkNotifications = useCallback(async () => {
     try {
@@ -28,9 +27,16 @@ export function useNotifications() {
         params: { after: lastCheckRef.current, limit: "20" },
       });
       const newNotifs = res.results || [];
-      if (newNotifs.length > 0 && prevCountRef.current > 0 && soundEnabled.current && localStorage.getItem("notification_sound") !== "off") {
-        playNotificationSound();
+      // Play sound on new notifications (skip first check to avoid sound on page load)
+      if (!isFirstCheck.current && newNotifs.length > 0 && localStorage.getItem("notification_sound") !== "off") {
+        const hasEscalation = newNotifs.some((n) => n.type === "escalation");
+        if (hasEscalation) {
+          playEscalationSound();
+        } else {
+          playNotificationSound();
+        }
       }
+      isFirstCheck.current = false;
       setNotifications((prev) => {
         const existing = new Set(prev.map((n) => n.id));
         const fresh = newNotifs.filter((n) => !existing.has(n.id));
@@ -65,10 +71,9 @@ export function useNotifications() {
 
   useEffect(() => {
     checkNotifications();
-    const interval = setInterval(checkNotifications, 10000);
-    prevCountRef.current = unreadCount;
+    const interval = setInterval(() => checkNotifications(), 10000);
     return () => clearInterval(interval);
-  }, [checkNotifications, unreadCount]);
+  }, [checkNotifications]);
 
   return {
     notifications,

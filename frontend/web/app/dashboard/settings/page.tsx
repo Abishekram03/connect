@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/toast";
 import { fetchAIConfig, updateAIConfig, type AIConfig } from "@/lib/ai-service";
+import { storeUser } from "@/lib/auth-service";
 
 type Tab = "account" | "general" | "ai" | "notifications" | "billing";
 
@@ -326,6 +327,72 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="space-y-5">
+                  {/* Avatar Upload */}
+                  <div>
+                    <label className="text-xs font-medium text-muted-foreground">
+                      Avatar
+                    </label>
+                    <div className="mt-2 flex items-center gap-4">
+                      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-surface-2 border border-border">
+                        {(user as any)?.avatar_url ? (
+                          <img
+                            src={(user as any).avatar_url}
+                            alt="Avatar"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xl font-semibold text-muted-foreground">
+                            {accountName ? accountName.charAt(0).toUpperCase() : "?"}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <label className="cursor-pointer rounded-md border border-border bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-2 transition-colors">
+                          Upload photo
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/gif"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              try {
+                                const { uploadAvatar } = await import("@/lib/auth-service");
+                                const res = await uploadAvatar(file);
+                                toast.success("Avatar updated");
+                                // Refresh user data
+                                const { getMe } = await import("@/lib/auth-service");
+                                const updated = await getMe();
+                                storeUser(updated);
+                              } catch (err: any) {
+                                toast.error(err.message || "Upload failed");
+                              }
+                            }}
+                          />
+                        </label>
+                        {(user as any)?.avatar_url && (
+                          <button
+                            onClick={async () => {
+                              try {
+                                const { deleteAvatar } = await import("@/lib/auth-service");
+                                await deleteAvatar();
+                                toast.success("Avatar removed");
+                                const { getMe } = await import("@/lib/auth-service");
+                                const updated = await getMe();
+                                storeUser(updated);
+                              } catch {
+                                toast.error("Failed to remove avatar");
+                              }
+                            }}
+                            className="text-xs text-muted-foreground hover:text-red-500 transition-colors"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-xs font-medium text-muted-foreground">
                       Name

@@ -14,6 +14,8 @@ class MessageSerializer(serializers.ModelSerializer):
     def get_sender_name(self, obj):
         if obj.sender:
             return obj.sender.first_name or obj.sender.email
+        if not obj.is_from_customer:
+            return "Kai"
         return "Customer"
 
 

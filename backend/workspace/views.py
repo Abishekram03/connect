@@ -96,6 +96,71 @@ def branding(request):
     return Response(serializer.data)
 
 
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def upload_branding_logo(request):
+    organization = get_user_org(request.user)
+    if not organization:
+        return Response({"detail": "No organization found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not require_admin_or_owner(request.user):
+        return Response(
+            {"detail": "Only admins and owners can modify branding"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    file = request.FILES.get("logo")
+    if not file:
+        return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/svg+xml"]
+    if file.content_type not in allowed_types:
+        return Response(
+            {"detail": "Only JPEG, PNG, WebP, GIF, and SVG files are allowed"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if file.size > 2 * 1024 * 1024:
+        return Response(
+            {"detail": "File size must be under 2MB"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    instance, _ = Branding.objects.get_or_create(organization=organization)
+
+    if instance.logo:
+        instance.logo.delete(save=False)
+
+    instance.logo = file
+    instance.save(update_fields=["logo"])
+
+    return Response({
+        "logo_url": request.build_absolute_uri(instance.logo.url),
+    })
+
+
+@api_view(["DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def delete_branding_logo(request):
+    organization = get_user_org(request.user)
+    if not organization:
+        return Response({"detail": "No organization found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not require_admin_or_owner(request.user):
+        return Response(
+            {"detail": "Only admins and owners can modify branding"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    instance, _ = Branding.objects.get_or_create(organization=organization)
+    if instance.logo:
+        instance.logo.delete(save=False)
+        instance.logo = None
+        instance.save(update_fields=["logo"])
+
+    return Response({"detail": "Logo removed"})
+
+
 @api_view(["GET", "PATCH"])
 @permission_classes([permissions.IsAuthenticated])
 def widget_config(request):

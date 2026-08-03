@@ -16,6 +16,7 @@ import {
   isHistoricalConversationAtom,
 } from "../../atoms/widget-atoms";
 import { GreetingMessage } from "../components/greeting-message";
+import { BrandLogo } from "../components/brand-logo";
 import {
   startConversation,
   sendMessage,
@@ -326,10 +327,11 @@ export const WidgetChatScreen = ({ mode = "production" }: Props) => {
           >
             <ArrowLeftIcon className="h-3.5 w-3.5" />
           </button>
+          <BrandLogo size={32} />
           <div>
-            <p className="text-lg font-semibold text-neutral-900">Kai</p>
+            <p className="text-lg font-semibold text-neutral-900">{widgetConfig.companyName || "Support"}</p>
             <p className="text-[12px] leading-tight text-neutral-500">
-              Support Assistant
+              Support Team
             </p>
           </div>
         </div>
@@ -355,8 +357,14 @@ export const WidgetChatScreen = ({ mode = "production" }: Props) => {
             className={`flex gap-2 ${msg.is_from_customer ? "justify-end" : "justify-start"}`}
           >
             {!msg.is_from_customer && (
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white shadow-sm border border-neutral-200 overflow-hidden mt-1">
-                <img src="/KAI_Logo.png" alt="Kai" className="h-4 w-4 object-contain" />
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden mt-1">
+                {msg.sender_name === "Kai" ? (
+                  <img src="/KAI_Logo.png" alt="Kai" className="h-6 w-6 object-contain" />
+                ) : (
+                  <span className="text-[8px] font-medium text-neutral-500">
+                    {msg.sender_name ? msg.sender_name.charAt(0).toUpperCase() : "A"}
+                  </span>
+                )}
               </div>
             )}
             <div
@@ -373,7 +381,7 @@ export const WidgetChatScreen = ({ mode = "production" }: Props) => {
             >
               {!msg.is_from_customer && (
                 <p className="mb-1 text-[10px] font-medium text-neutral-500">
-                  Kai
+                  {msg.sender_name || "Agent"}
                 </p>
               )}
               <p className="whitespace-pre-wrap break-words">

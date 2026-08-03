@@ -11,9 +11,14 @@ class OrganizationSerializer(serializers.ModelSerializer):
 
 
 class BrandingSerializer(serializers.ModelSerializer):
+    logo_url_resolved = serializers.SerializerMethodField()
+
     class Meta:
         model = Branding
-        fields = ["primary_color", "company_name", "logo_url"]
+        fields = ["primary_color", "company_name", "logo", "logo_url", "logo_url_resolved"]
+
+    def get_logo_url_resolved(self, obj):
+        return obj.effective_logo_url
 
 
 class WidgetConfigSerializer(serializers.ModelSerializer):

@@ -189,6 +189,101 @@ function AppearanceTab() {
         </div>
 
         <div className="flex-1 space-y-4 p-4">
+          {/* Branding */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground mb-2">Branding</p>
+            <div className="rounded-lg border border-border p-3.5 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Primary Color</label>
+                <div className="mt-1.5 flex items-center gap-3">
+                  <div
+                    className="h-9 w-9 rounded-md border border-border shrink-0"
+                    style={{ backgroundColor: branding.primaryColor }}
+                  />
+                  <input
+                    type="text"
+                    value={branding.primaryColor}
+                    onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
+                    className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none w-28 font-mono"
+                  />
+                  <input
+                    type="color"
+                    value={branding.primaryColor}
+                    onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
+                    className="h-9 w-9 cursor-pointer rounded border border-border shrink-0"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Company Name</label>
+                <input
+                  type="text"
+                  value={branding.companyName}
+                  onChange={(e) => setBranding({ ...branding, companyName: e.target.value })}
+                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Logo</label>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={branding.logoUrl}
+                    onChange={(e) => setBranding({ ...branding, logoUrl: e.target.value })}
+                    placeholder="https://example.com/logo.png"
+                    className="flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
+                  />
+                  <label className="flex cursor-pointer items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground">
+                    <Upload className="h-3.5 w-3.5" />
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const formData = new FormData();
+                          formData.append("logo", file);
+                          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}/api/workspace/branding/logo`, {
+                            method: "POST",
+                            headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
+                            body: formData,
+                          });
+                          if (!res.ok) throw new Error("Upload failed");
+                          const data = await res.json();
+                          setBranding((prev) => ({ ...prev, logoUrl: data.logo_url }));
+                          toast.success("Logo uploaded");
+                        } catch {
+                          toast.error("Failed to upload logo");
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+              {/* Branding Preview */}
+              <div className="rounded-md bg-surface p-3">
+                <div className="flex items-center gap-3">
+                  {branding.logoUrl ? (
+                    <img src={branding.logoUrl} alt="Logo" className="h-8 w-8 rounded-lg object-contain" />
+                  ) : (
+                    <div
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
+                      style={{ backgroundColor: branding.primaryColor }}
+                    >
+                      {branding.companyName.charAt(0)}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs font-semibold text-ink">{branding.companyName}</p>
+                    <p className="text-[10px] text-muted-foreground">Customer Support</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Position */}
           <div>
             <label className="text-xs font-medium text-muted-foreground">Position</label>
@@ -336,77 +431,6 @@ function AppearanceTab() {
               )}
             </div>
           )}
-
-          {/* Branding */}
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Branding</p>
-            <div className="rounded-lg border border-border p-3.5 space-y-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Primary Color</label>
-                <div className="mt-1.5 flex items-center gap-3">
-                  <div
-                    className="h-9 w-9 rounded-md border border-border shrink-0"
-                    style={{ backgroundColor: branding.primaryColor }}
-                  />
-                  <input
-                    type="text"
-                    value={branding.primaryColor}
-                    onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
-                    className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none w-28 font-mono"
-                  />
-                  <input
-                    type="color"
-                    value={branding.primaryColor}
-                    onChange={(e) => setBranding({ ...branding, primaryColor: e.target.value })}
-                    className="h-9 w-9 cursor-pointer rounded border border-border shrink-0"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Company Name</label>
-                <input
-                  type="text"
-                  value={branding.companyName}
-                  onChange={(e) => setBranding({ ...branding, companyName: e.target.value })}
-                  className="mt-1.5 w-full rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Logo URL</label>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={branding.logoUrl}
-                    onChange={(e) => setBranding({ ...branding, logoUrl: e.target.value })}
-                    placeholder="https://example.com/logo.png"
-                    className="flex-1 rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs text-ink outline-none placeholder:text-muted-foreground"
-                  />
-                  <button className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                    <Upload className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              {/* Branding Preview */}
-              <div className="rounded-md bg-surface p-3">
-                <div className="flex items-center gap-3">
-                  {branding.logoUrl ? (
-                    <img src={branding.logoUrl} alt="Logo" className="h-8 w-8 rounded-lg object-contain" />
-                  ) : (
-                    <div
-                      className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold text-white"
-                      style={{ backgroundColor: branding.primaryColor }}
-                    >
-                      {branding.companyName.charAt(0)}
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-semibold text-ink">{branding.companyName}</p>
-                    <p className="text-[10px] text-muted-foreground">Customer Support</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Save Bar */}
@@ -470,12 +494,14 @@ function InstallTab() {
 
   const orgId = user?.organization?.id || "";
 
+  const apiOrigin = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6">
       <div>
         <h2 className="text-base font-semibold text-ink">Install Widget</h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Copy the embed snippet below to add the chat widget to your website.
+          Copy the script below and paste it before the closing <code className="text-[11px] bg-surface px-1 py-0.5 rounded">&lt;/body&gt;</code> tag on your website.
         </p>
       </div>
 
@@ -505,16 +531,19 @@ function InstallTab() {
       <div>
         <label className="text-xs font-medium text-muted-foreground">Embed Code</label>
         <pre className="mt-1 max-w-xl overflow-x-auto rounded-md border border-border bg-surface p-3 text-xs font-mono text-ink leading-relaxed">
-{`<iframe
-  src="${origin}/widget?organizationId=${orgId}"
-  style="position:fixed;bottom:20px;right:20px;width:380px;height:600px;border:none;z-index:9999"
-  title="Connect Widget"
-/>`}
+{`<script
+  src="${apiOrigin}/api/widget/embed.js"
+  data-org-id="${orgId}"
+  data-position="bottom-right"
+  data-color="#2563eb"
+  async
+  defer
+></script>`}
         </pre>
         <button
           onClick={() => {
             navigator.clipboard.writeText(
-              `<iframe\n  src="${origin}/widget?organizationId=${orgId}"\n  style="position:fixed;bottom:20px;right:20px;width:380px;height:600px;border:none;z-index:9999"\n  title="Connect Widget"\n/>`
+              `<script\n  src="${apiOrigin}/api/widget/embed.js"\n  data-org-id="${orgId}"\n  data-position="bottom-right"\n  data-color="#2563eb"\n  async\n  defer\n></script>`
             );
             setCopiedCode(true);
             setTimeout(() => setCopiedCode(false), 2000);
@@ -524,6 +553,17 @@ function InstallTab() {
           {copiedCode ? <CheckCheck className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
           {copiedCode ? "Copied" : "Copy Code"}
         </button>
+      </div>
+
+      <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
+        <p className="text-xs font-medium text-ink">How it works</p>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li>The script creates a floating launcher button on your website</li>
+          <li>Clicking the button opens the chat widget panel</li>
+          <li><code className="text-[11px] bg-card px-1 py-0.5 rounded">data-position</code> — <code className="text-[11px] bg-card px-1 py-0.5 rounded">bottom-right</code> (default) or <code className="text-[11px] bg-card px-1 py-0.5 rounded">bottom-left</code></li>
+          <li><code className="text-[11px] bg-card px-1 py-0.5 rounded">data-color</code> — launcher button color (hex)</li>
+          <li>Control from JS: <code className="text-[11px] bg-card px-1 py-0.5 rounded">ConnectWidget.open()</code>, <code className="text-[11px] bg-card px-1 py-0.5 rounded">.close()</code>, <code className="text-[11px] bg-card px-1 py-0.5 rounded">.toggle()</code></li>
+        </ul>
       </div>
     </div>
   );

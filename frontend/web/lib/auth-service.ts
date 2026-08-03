@@ -17,6 +17,7 @@ export interface User {
   status: string;
   organization: Organization;
   language: string;
+  avatar_url: string | null;
   date_joined: string;
 }
 
@@ -139,6 +140,25 @@ export async function updateProfile(name: string): Promise<User> {
   const data = await api.patch<User>("/api/auth/me", { name });
   storeUser(data);
   return data;
+}
+
+export async function uploadAvatar(file: File): Promise<{ avatar_url: string }> {
+  const formData = new FormData();
+  formData.append("avatar", file);
+  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"}/api/auth/avatar`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${localStorage.getItem("access_token")}` },
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Upload failed");
+  }
+  return res.json();
+}
+
+export async function deleteAvatar(): Promise<void> {
+  await api.post("/api/auth/avatar/delete", {});
 }
 
 export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {

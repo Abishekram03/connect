@@ -60,10 +60,19 @@ class SigninSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     organization = OrganizationSerializer(read_only=True)
     name = serializers.CharField(source="first_name", read_only=True)
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ["id", "email", "name", "role", "status", "organization", "language", "date_joined"]
+        fields = ["id", "email", "name", "role", "status", "organization", "language", "avatar_url", "date_joined"]
+
+    def get_avatar_url(self, obj):
+        if obj.avatar:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.avatar.url)
+            return obj.avatar.url
+        return None
 
 
 class SendCodeSerializer(serializers.Serializer):

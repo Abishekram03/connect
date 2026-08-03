@@ -8,6 +8,7 @@ class Notification(models.Model):
         ("new_message", "New Message"),
         ("assignment", "Assignment"),
         ("mention", "Mention"),
+        ("escalation", "Escalation"),
     ]
 
     organization = models.ForeignKey(

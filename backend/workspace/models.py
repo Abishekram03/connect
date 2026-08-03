@@ -6,10 +6,17 @@ class Branding(models.Model):
     organization = models.OneToOneField(Organization, on_delete=models.CASCADE, related_name="branding")
     primary_color = models.CharField(max_length=7, default="#2563eb")
     company_name = models.CharField(max_length=255, default="Connect")
+    logo = models.ImageField(upload_to="branding/logos/", blank=True, null=True)
     logo_url = models.URLField(blank=True, default="")
 
     def __str__(self):
         return f"Branding for {self.organization.name}"
+
+    @property
+    def effective_logo_url(self):
+        if self.logo:
+            return self.logo.url
+        return self.logo_url or ""
 
 
 class WidgetConfig(models.Model):

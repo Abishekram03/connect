@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Check, CheckCheck, X } from "lucide-react";
+import { Bell, CheckCheck, X } from "lucide-react";
 import { useNotifications, type Notification } from "@/hooks/use-notifications";
 
 function timeAgo(dateStr: string): string {
@@ -20,6 +20,7 @@ const typeColors: Record<string, string> = {
   new_message: "bg-green-100 text-green-600",
   assignment: "bg-purple-100 text-purple-600",
   mention: "bg-amber-100 text-amber-600",
+  escalation: "bg-red-100 text-red-600",
 };
 
 export function NotificationBell() {
@@ -28,17 +29,26 @@ export function NotificationBell() {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!open) return;
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
     };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+    // Use timeout to avoid the same click that opened it from closing it
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClick);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClick);
+    };
+  }, [open]);
 
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen((v) => !v)}
         className="relative flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
       >
         <Bell className="h-4 w-4" />
@@ -50,37 +60,34 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-80 max-h-96 overflow-hidden rounded-lg border border-border bg-card shadow-xl">
-            <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
-              <h3 className="text-sm font-semibold text-ink">Notifications</h3>
-              <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllAsRead}
-                    className="flex items-center gap-1 text-xs text-accent hover:text-accent/80"
-                  >
-                    <CheckCheck className="h-3 w-3" />
-                    Mark all read
-                  </button>
-                )}
-                <button onClick={() => setOpen(false)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
-                  <X className="h-3.5 w-3.5" />
+        <div className="fixed bottom-0 left-0 right-0 z-50 max-h-[70vh] overflow-hidden rounded-t-xl border border-border bg-card shadow-xl md:absolute md:bottom-full md:left-0 md:mb-1 md:w-80 md:rounded-xl md:max-h-96 md:right-auto">
+          <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+            <h3 className="text-sm font-semibold text-ink">Notifications</h3>
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllAsRead}
+                  className="flex items-center gap-1 text-xs text-accent hover:text-accent/80"
+                >
+                  <CheckCheck className="h-3 w-3" />
+                  Mark all read
                 </button>
-              </div>
-            </div>
-            <div className="overflow-y-auto max-h-80">
-              {notifications.length === 0 ? (
-                <div className="py-10 text-center text-sm text-muted-foreground">No notifications yet</div>
-              ) : (
-                notifications.map((n) => (
-                  <NotificationItem key={n.id} notification={n} onRead={markAsRead} />
-                ))
               )}
+              <button onClick={() => setOpen(false)} className="rounded p-0.5 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
-        </>
+          <div className="overflow-y-auto max-h-[calc(70vh-44px)] md:max-h-80">
+            {notifications.length === 0 ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">No notifications yet</div>
+            ) : (
+              notifications.map((n) => (
+                <NotificationItem key={n.id} notification={n} onRead={markAsRead} />
+              ))
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -91,13 +98,16 @@ function NotificationItem({ notification: n, onRead }: { notification: Notificat
     <button
       onClick={() => {
         if (!n.read) onRead(n.id);
+        if (n.conversation_id) {
+          window.location.href = `/dashboard/inbox?conversation=${n.conversation_id}`;
+        }
       }}
       className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2 ${
         !n.read ? "bg-accent/5" : ""
       }`}
     >
       <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${typeColors[n.type] || "bg-gray-100 text-gray-600"}`}>
-        {n.type === "new_conversation" ? "💬" : n.type === "new_message" ? "✉" : n.type === "mention" ? "@" : "→"}
+        {n.type === "new_conversation" ? "💬" : n.type === "new_message" ? "✉" : n.type === "mention" ? "@" : n.type === "escalation" ? "🚨" : "→"}
       </div>
       <div className="flex-1 min-w-0">
         <p className={`text-xs ${!n.read ? "font-semibold text-ink" : "text-muted-foreground"}`}>{n.title}</p>

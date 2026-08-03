@@ -321,6 +321,50 @@ def change_password(request):
 
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
+def upload_avatar(request):
+    file = request.FILES.get("avatar")
+    if not file:
+        return Response({"detail": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    if file.content_type not in allowed_types:
+        return Response(
+            {"detail": "Only JPEG, PNG, WebP, and GIF files are allowed"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate file size (max 5MB)
+    if file.size > 5 * 1024 * 1024:
+        return Response(
+            {"detail": "File size must be under 5MB"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Delete old avatar if exists
+    if request.user.avatar:
+        request.user.avatar.delete(save=False)
+
+    request.user.avatar = file
+    request.user.save(update_fields=["avatar"])
+
+    return Response({
+        "avatar": request.user.avatar.url if request.user.avatar else None,
+    })
+
+
+@api_view(["DELETE"])
+@permission_classes([permissions.IsAuthenticated])
+def delete_avatar(request):
+    if request.user.avatar:
+        request.user.avatar.delete(save=False)
+        request.user.avatar = None
+        request.user.save(update_fields=["avatar"])
+    return Response({"detail": "Avatar removed"})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
 def logout(request):
     try:
         refresh_token = request.data.get("refresh")

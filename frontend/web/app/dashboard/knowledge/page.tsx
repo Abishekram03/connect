@@ -347,7 +347,7 @@ export default function KnowledgePage() {
 
           <div className="flex flex-1 overflow-hidden">
             {/* List panel */}
-            <div className="flex w-full md:w-80 flex-col overflow-y-auto border-r border-border">
+            <div className="flex w-full md:w-80 shrink-0 flex-col overflow-y-auto border-r border-border">
               {loading ? (
                 <div className="flex items-center justify-center py-12">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -428,7 +428,7 @@ export default function KnowledgePage() {
             </div>
 
             {/* Detail panel */}
-            <div className="flex flex-1 flex-col overflow-y-auto">
+            <div className="flex flex-1 min-w-0 flex-col overflow-y-auto">
               {loadingArticle ? (
                 <div className="flex flex-1 items-center justify-center">
                   <div className="text-center">

@@ -15,4 +15,6 @@ urlpatterns = [
     path("auth/refresh", TokenRefreshView.as_view(), name="token-refresh"),
     path("auth/setup-workspace", views.setup_workspace, name="setup-workspace"),
     path("auth/change-password", views.change_password, name="change-password"),
+    path("auth/avatar", views.upload_avatar, name="upload-avatar"),
+    path("auth/avatar/delete", views.delete_avatar, name="delete-avatar"),
 ]

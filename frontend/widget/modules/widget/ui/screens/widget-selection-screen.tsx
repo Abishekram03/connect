@@ -13,6 +13,7 @@ import {
   contactEmailAtomFamily,
 } from "../../atoms/widget-atoms";
 import { fetchHelpCenter, type HelpCenterFaq } from "../../../../lib/widget-api";
+import { BrandLogo } from "../components/brand-logo";
 
 interface Props {
   mode?: "preview" | "production";
@@ -58,9 +59,7 @@ export const WidgetSelectionScreen = ({
 
       <div className="relative z-10 flex flex-1 flex-col overflow-y-auto px-4 pb-5 pt-5">
         <div className="flex items-start justify-between">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl text-base font-bold text-white shadow-sm" style={{ backgroundColor: widgetConfig.primaryColor }}>
-            C
-          </div>
+          <BrandLogo size={40} />
           {onClose && (
             <button
               onClick={onClose}

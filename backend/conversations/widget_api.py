@@ -1,4 +1,6 @@
 import uuid
+import os
+from django.http import HttpResponse
 from django.utils import timezone
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -83,7 +85,7 @@ def widget_config(request):
         "organizationName": org.name,
         "primaryColor": br.primary_color,
         "companyName": br.company_name,
-        "logoUrl": br.logo_url,
+        "logoUrl": request.build_absolute_uri(br.effective_logo_url) if br.logo else br.effective_logo_url,
         "position": wc.position,
         "borderRadius": wc.border_radius,
         "showBranding": wc.show_branding,
@@ -338,6 +340,18 @@ def conversation_messages(request, pk):
             # Per-org AI rate limit
             if not _check_org_ai_rate(org_id):
                 ai_reply_data = {"escalate": True, "reason": "rate_limit_exceeded"}
+                # Notify human agents
+                try:
+                    from notifications.views import create_notification
+                    create_notification(
+                        org=conversation.organization,
+                        notification_type="escalation",
+                        title=f"Escalation: {conversation.customer_name or conversation.customer_email or f'Visitor #{conversation.ticket_id}'}",
+                        body="AI rate limit exceeded — needs human response",
+                        conversation=conversation,
+                    )
+                except Exception:
+                    pass
             else:
                 provider = get_provider(conversation.organization)
 
@@ -405,6 +419,26 @@ def conversation_messages(request, pk):
                         "escalate": True,
                         "reason": result["escalation_reason"],
                     }
+
+                    # Notify human agents about escalation
+                    try:
+                        from notifications.views import create_notification
+                        reason_display = {
+                            "angry_customer": "Angry customer detected",
+                            "low_confidence": "AI low confidence",
+                            "explicit_human_request": "Customer requested human agent",
+                            "max_ai_turns_reached": "Max AI turns reached",
+                            "rate_limit_exceeded": "AI rate limit exceeded",
+                        }.get(result["escalation_reason"], "Escalated to human")
+                        create_notification(
+                            org=conversation.organization,
+                            notification_type="escalation",
+                            title=f"Escalation: {conversation.customer_name or conversation.customer_email or f'Visitor #{conversation.ticket_id}'}",
+                            body=reason_display,
+                            conversation=conversation,
+                        )
+                    except Exception:
+                        pass
     except Exception:
         pass  # Don't break the widget flow if AI fails
 
@@ -413,3 +447,111 @@ def conversation_messages(request, pk):
         response_data["ai_reply"] = ai_reply_data
 
     return Response(response_data, status=status.HTTP_201_CREATED)
+
+
+WIDGET_URL = os.getenv("NEXT_PUBLIC_WIDGET_URL", "http://localhost:3001")
+
+EMBED_SCRIPT = f"""(function() {{
+  if (window.__connect_loaded) return;
+  window.__connect_loaded = true;
+
+  var script = document.currentScript;
+  var orgId = script?.getAttribute('data-org-id');
+  if (!orgId) {{
+    console.error('[Connect] Missing data-org-id attribute');
+    return;
+  }}
+
+  var WIDGET_URL = '{WIDGET_URL}';
+  var POSITION = (script?.getAttribute('data-position') || 'bottom-right').trim();
+  var COLOR = script?.getAttribute('data-color') || '#2563eb';
+
+  var isLeft = POSITION === 'bottom-left';
+  var sideProp = isLeft ? 'left' : 'right';
+
+  // Create launcher button
+  var launcher = document.createElement('div');
+  launcher.id = 'connect-widget-launcher';
+  launcher.style.cssText = 'position:fixed;bottom:20px;' + sideProp + ':20px;z-index:10000;cursor:pointer;border-radius:50%;width:56px;height:56px;background:' + COLOR + ';display:flex;align-items:center;justify-content:center;box-shadow:0 4px 24px rgba(0,0,0,0.2);transition:transform 0.2s,opacity 0.2s;';
+  launcher.setAttribute('role', 'button');
+  launcher.setAttribute('aria-label', 'Open chat');
+
+  // Chat icon
+  launcher.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/></svg>';
+
+  // Close icon (hidden by default)
+  var closeIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
+  var chatIcon = launcher.innerHTML;
+
+  // Create iframe container
+  var container = document.createElement('div');
+  container.id = 'connect-widget-container';
+  container.style.cssText = 'position:fixed;bottom:90px;' + sideProp + ':20px;z-index:9999;width:340px;height:480px;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.15);display:none;transition:opacity 0.2s,transform 0.2s;opacity:0;transform:translateY(20px);';
+
+  var iframe = document.createElement('iframe');
+  iframe.src = WIDGET_URL + '/?organizationId=' + encodeURIComponent(orgId);
+  iframe.style.cssText = 'width:100%;height:100%;border:none;';
+  iframe.title = 'Connect Widget';
+  iframe.id = 'connect-widget-iframe';
+  container.appendChild(iframe);
+
+  document.body.appendChild(container);
+  document.body.appendChild(launcher);
+
+  var isOpen = false;
+
+  function openWidget() {{
+    isOpen = true;
+    container.style.display = 'block';
+    launcher.innerHTML = closeIcon;
+    // Trigger reflow for animation
+    void container.offsetHeight;
+    container.style.opacity = '1';
+    container.style.transform = 'translateY(0)';
+    try {{ iframe.contentWindow.postMessage({{ type: 'connect:open' }}, '*'); }} catch(e) {{}}
+  }}
+
+  function closeWidget() {{
+    isOpen = false;
+    container.style.opacity = '0';
+    container.style.transform = 'translateY(20px)';
+    launcher.innerHTML = chatIcon;
+    setTimeout(function() {{ container.style.display = 'none'; }}, 200);
+    try {{ iframe.contentWindow.postMessage({{ type: 'connect:close' }}, '*'); }} catch(e) {{}}
+  }}
+
+  launcher.addEventListener('click', function() {{
+    if (isOpen) closeWidget(); else openWidget();
+  }});
+
+  // Hover effect
+  launcher.addEventListener('mouseenter', function() {{
+    if (!isOpen) launcher.style.transform = 'scale(1.1)';
+  }});
+  launcher.addEventListener('mouseleave', function() {{
+    launcher.style.transform = 'scale(1)';
+  }});
+
+  // Listen for article open/close from widget iframe — expand width for readability
+  window.addEventListener('message', function(event) {{
+    if (event.source !== iframe.contentWindow) return;
+    if (event.data?.type === 'connect:article-open') {{
+      container.style.width = '480px';
+      container.style.transition = 'width 0.25s ease, opacity 0.2s, transform 0.2s';
+    }} else if (event.data?.type === 'connect:article-close') {{
+      container.style.width = '340px';
+      container.style.transition = 'width 0.25s ease, opacity 0.2s, transform 0.2s';
+    }}
+  }});
+
+  window.ConnectWidget = {{
+    open: openWidget,
+    close: closeWidget,
+    toggle: function() {{ if (isOpen) closeWidget(); else openWidget(); }}
+  }};
+}})();
+"""
+
+
+def embed_script(request):
+    return HttpResponse(EMBED_SCRIPT, content_type="application/javascript")
