@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@connect/ui/components/button";
 import { Icon } from "@iconify/react";
-import { ListChecks, X, Inbox } from "lucide-react";
+import { X, Inbox } from "lucide-react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   organizationIdAtom,
@@ -12,7 +12,6 @@ import {
   isAiConversationAtom,
   contactEmailAtomFamily,
 } from "../../atoms/widget-atoms";
-import { fetchHelpCenter, type HelpCenterFaq } from "../../../../lib/widget-api";
 import { BrandLogo } from "../components/brand-logo";
 
 interface Props {
@@ -30,16 +29,6 @@ export const WidgetSelectionScreen = ({
   const organizationId = useAtomValue(organizationIdAtom);
   const storedEmail = useAtomValue(contactEmailAtomFamily(organizationId || ""));
   const [isPending, setIsPending] = useState<"chat" | null>(null);
-  const [faqs, setFaqs] = useState<HelpCenterFaq[]>([]);
-
-  useEffect(() => {
-    if (!organizationId || !widgetConfig.showFaqsOnHome) return;
-    fetchHelpCenter(organizationId)
-      .then((data) => {
-        setFaqs(data.faqs.slice(0, widgetConfig.faqsDisplayCount));
-      })
-      .catch(() => {});
-  }, [organizationId, widgetConfig.showFaqsOnHome, widgetConfig.faqsDisplayCount]);
 
   const handleStartChat = () => {
     setIsPending("chat");
@@ -131,49 +120,6 @@ export const WidgetSelectionScreen = ({
               className="h-[18px] w-[18px] flex-shrink-0 text-neutral-400"
             />
           </Button>
-        )}
-
-        {widgetConfig.showFaqsOnHome && (
-          <div className="mb-4 rounded-xl border border-neutral-200 bg-white/90 p-3 shadow-[0_2px_10px_rgb(0_0_0_/_0.06)]">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ListChecks className="h-4 w-4 text-neutral-500" />
-                <p className="text-sm font-semibold text-neutral-900">
-                  Quick answers
-                </p>
-              </div>
-              {widgetConfig.helpCenterEnabled && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2 text-[12px]"
-                  onClick={() => setScreen("help")}
-                >
-                  Browse help
-                </Button>
-              )}
-            </div>
-
-            {faqs.length === 0 ? (
-              <p className="text-xs text-neutral-500">FAQs coming soon.</p>
-            ) : (
-              <div className="space-y-2">
-                {faqs.map((faq) => (
-                  <details
-                    key={faq.id}
-                    className="group rounded-lg border border-neutral-100 bg-white"
-                  >
-                    <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-neutral-900 group-open:bg-neutral-50">
-                      {faq.question}
-                    </summary>
-                    <div className="px-3 pb-3 text-sm text-neutral-700">
-                      {faq.answer}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            )}
-          </div>
         )}
       </div>
     </div>

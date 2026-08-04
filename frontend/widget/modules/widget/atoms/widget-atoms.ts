@@ -45,10 +45,6 @@ export interface WidgetConfig {
   maxFileSize: number;
   showBranding: boolean;
   customCss?: string;
-  helpCenterEnabled: boolean;
-  showFaqsOnHome: boolean;
-  faqsDisplayCount: number;
-  selectedFaqIds: string[];
   // Plan-based access
   currentPlan: "free" | "starter" | "pro" | "enterprise";
 }
@@ -75,10 +71,6 @@ export const DEFAULT_WIDGET_CONFIG: WidgetConfig = {
   allowAttachments: true,
   maxFileSize: 10,
   showBranding: true,
-  helpCenterEnabled: false,
-  showFaqsOnHome: false,
-  faqsDisplayCount: 3,
-  selectedFaqIds: [],
   currentPlan: "free",
 };
 

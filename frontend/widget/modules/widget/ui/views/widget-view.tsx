@@ -16,7 +16,6 @@ import { WidgetLoadingScreen } from "../screens/widget-loading-screen";
 import { WidgetSelectionScreen } from "../screens/widget-selection-screen";
 import { WidgetChatScreen } from "../screens/widget-chat-screen";
 import { WidgetInboxScreen } from "../screens/widget-inbox-screen";
-import { WidgetHelpScreen } from "../screens/widget-help-screen";
 import { fetchWidgetConfig } from "../../../../lib/widget-api";
 
 interface Props {
@@ -57,9 +56,6 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
         autoGreet: cfg.autoGreet,
         autoGreetDelay: cfg.autoGreetDelay,
         collectEmail: cfg.collectEmail,
-        helpCenterEnabled: cfg.helpCenterEnabled,
-        showFaqsOnHome: cfg.showFaqsOnHome,
-        faqsDisplayCount: cfg.faqsDisplayCount,
       }));
     }).catch(() => {});
   }, [organizationId, setWidgetConfig]);
@@ -137,7 +133,6 @@ export const WidgetView = ({ organizationId, mode = "production", onClose }: Pro
     inbox: <WidgetInboxScreen mode={mode} />,
     selection: <WidgetSelectionScreen mode={mode} onClose={onClose} />,
     chat: <WidgetChatScreen mode={mode} />,
-    help: <WidgetHelpScreen mode={mode} />,
   };
 
   // If screen is "auth" (stale localStorage), redirect to selection

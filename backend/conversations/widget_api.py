@@ -92,9 +92,6 @@ def widget_config(request):
         "autoGreet": wc.auto_greet,
         "autoGreetDelay": wc.auto_greet_delay,
         "collectEmail": wc.collect_email,
-        "helpCenterEnabled": wc.help_center_enabled,
-        "showFaqsOnHome": wc.show_faqs_on_home,
-        "faqsDisplayCount": wc.faqs_display_count,
         "aiReplyEnabled": getattr(org, 'ai_config', None) and org.ai_config.auto_reply_enabled,
     })
 

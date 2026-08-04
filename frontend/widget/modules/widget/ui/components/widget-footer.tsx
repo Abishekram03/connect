@@ -12,14 +12,8 @@ export const WidgetFooter = ({
   const widgetConfig = useAtomValue(widgetConfigAtom);
   const setScreen = useSetAtom(screenAtom);
 
-  // Helper to check active tab.
-  // "selection" is Home. "inbox" is Inbox. "chat" is also related to Inbox but usually highlights Inbox?
-  // User says "Clicking switches screens".
-  // Note: if screen is "chat", Inbox icon should probably be active or neutral?
-  // Customary: If I am deep in chat (from Inbox), Inbox tab is active.
   const isHome = screen === "selection";
   const isInbox = screen === "inbox" || screen === "chat";
-  const isHelp = screen === "help";
   const activeColor = widgetConfig.primaryColor || "#2563eb";
 
   return (
@@ -56,28 +50,6 @@ export const WidgetFooter = ({
           />
           <span className="text-[11px] leading-none">Messages</span>
         </button>
-
-        {widgetConfig.helpCenterEnabled && (
-          <button
-            className={cn(
-              "flex flex-col items-center gap-0.5 p-1.5 rounded-lg transition-colors",
-              isHelp ? "text-neutral-900" : "text-gray-500 hover:text-gray-700",
-            )}
-            onClick={() => setScreen("help")}
-            aria-label="Go to help center"
-          >
-            <Icon
-              icon={
-                isHelp
-                  ? "solar:question-circle-bold"
-                  : "solar:question-circle-linear"
-              }
-              className="h-5 w-5"
-              style={{ color: isHelp ? activeColor : undefined }}
-            />
-            <span className="text-[11px] leading-none">Help</span>
-          </button>
-        )}
       </div>
 
       {showBranding && (

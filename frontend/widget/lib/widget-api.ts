@@ -35,9 +35,6 @@ export interface WidgetConfigResponse {
   autoGreet: boolean;
   autoGreetDelay: number;
   collectEmail: boolean;
-  helpCenterEnabled: boolean;
-  showFaqsOnHome: boolean;
-  faqsDisplayCount: number;
 }
 
 export interface ConversationResponse {
@@ -140,40 +137,4 @@ export function fetchMessages(conversationId: string, since?: string, orgId?: st
   if (orgId) params.set("session_token", getSessionToken(orgId));
   const qs = params.toString() ? `?${params.toString()}` : "";
   return api(`/api/widget/conversations/${conversationId}/messages${qs}`);
-}
-
-// ─── Help Center ──────────────────────────────────────────
-
-export interface HelpCenterCategory {
-  id: string;
-  name: string;
-  description: string;
-  article_count: number;
-  faq_count: number;
-}
-
-export interface HelpCenterArticle {
-  id: string;
-  title: string;
-  excerpt: string;
-  content: string;
-  category_name: string;
-  updated_at: string;
-}
-
-export interface HelpCenterFaq {
-  id: string;
-  question: string;
-  answer: string;
-  category_name: string;
-}
-
-export interface HelpCenterResponse {
-  categories: HelpCenterCategory[];
-  articles: HelpCenterArticle[];
-  faqs: HelpCenterFaq[];
-}
-
-export function fetchHelpCenter(organizationId: string): Promise<HelpCenterResponse> {
-  return api(`/api/widget/help-center?organization_id=${encodeURIComponent(organizationId)}`);
 }
