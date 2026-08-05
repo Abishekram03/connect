@@ -8,6 +8,8 @@ export interface Membership {
   status: "active" | "invited" | "suspended";
   invited_by: { id: string; email: string; name: string } | null;
   created_at: string;
+  open_conversations: number;
+  total_conversations: number;
 }
 
 export interface Team {
@@ -30,6 +32,8 @@ export interface TeamMembership {
   team: string;
   role: "admin" | "member";
   created_at: string;
+  open_conversations: number;
+  total_conversations: number;
 }
 
 export interface Invitation {

@@ -20,6 +20,13 @@ export interface Conversation {
   team: Team | null;
   last_message: { id: string; body: string; created_at: string; is_from_customer: boolean } | null;
   message_count: number;
+  assigned_at: string | null;
+  first_response_at: string | null;
+  resolved_at: string | null;
+  sla_deadline: string | null;
+  sla_breached: boolean;
+  sla_status: "on_track" | "warning" | "breached" | "none";
+  sla_time_remaining: number | null;
   last_message_at: string;
   created_at: string;
 }

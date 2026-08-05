@@ -3,6 +3,8 @@ from . import views
 
 urlpatterns = [
     path("ai/config", views.ai_config_detail, name="ai-config"),
+    path("ai/analytics", views.ai_analytics, name="ai-analytics"),
+    path("ai/sla-config", views.sla_config_detail, name="ai-sla-config"),
     path("ai/sources", views.knowledge_source_list, name="ai-source-list"),
     path("ai/sources/<uuid:pk>", views.knowledge_source_detail, name="ai-source-detail"),
     path("ai/sources/<uuid:pk>/sync", views.sync_source, name="ai-source-sync"),

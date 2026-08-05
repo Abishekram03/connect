@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import AIConfig, KnowledgeSource, DocumentChunk, AIReplyLog
+from .models import AIConfig, KnowledgeSource, DocumentChunk, AIReplyLog, SLAConfig
 
 
 class AIConfigSerializer(serializers.ModelSerializer):
@@ -10,6 +10,8 @@ class AIConfigSerializer(serializers.ModelSerializer):
             "temperature", "max_tokens", "system_prompt",
             "escalate_on_angry", "escalate_on_low_confidence", "confidence_threshold",
             "max_ai_turns", "provider_base_url", "provider_api_key",
+            "auto_assign_on_escalation", "auto_assign_routing", "auto_assign_team_id",
+            "escalation_increase_priority",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
@@ -103,3 +105,15 @@ class SummarizeResponseSerializer(serializers.Serializer):
 
 class NextStepsResponseSerializer(serializers.Serializer):
     steps = serializers.ListField(child=serializers.CharField())
+
+
+class SLAConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SLAConfig
+        fields = [
+            "id", "enabled",
+            "urgent_hours", "high_hours", "normal_hours", "low_hours",
+            "warn_before_minutes",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]

@@ -21,6 +21,7 @@ import {
   type Agent,
   type Team,
 } from "@/lib/conversations-service";
+import { SLABadge } from "@/components/sla-badge";
 import {
   suggestReply,
   summarizeConversation,
@@ -548,6 +549,14 @@ export default function InboxPage() {
                       }`}>
                         {c.status}
                       </span>
+                      {c.sla_status && c.sla_status !== "none" && (
+                        <SLABadge
+                          status={c.sla_status}
+                          timeRemaining={c.sla_time_remaining}
+                          deadline={c.sla_deadline}
+                          compact
+                        />
+                      )}
                       {c.assignee && (
                         <span className="truncate text-[10px] text-muted-foreground">
                           {c.assignee.name}
@@ -1214,6 +1223,16 @@ function DetailsContent({ activeConvo, formatTime, teams, agents, onTeamChange, 
                   {activeConvo.priority.charAt(0).toUpperCase() + activeConvo.priority.slice(1)}
                 </span>
               </div>
+              {activeConvo.sla_status && activeConvo.sla_status !== "none" && (
+                <div className="flex items-center justify-between">
+                  {label("SLA")}
+                  <SLABadge
+                    status={activeConvo.sla_status}
+                    timeRemaining={activeConvo.sla_time_remaining}
+                    deadline={activeConvo.sla_deadline}
+                  />
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 {label("Channel")}
                 <span className="text-xs font-medium text-ink capitalize">{activeConvo.channel}</span>

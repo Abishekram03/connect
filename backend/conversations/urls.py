@@ -10,6 +10,7 @@ urlpatterns = [
     path("conversations/<uuid:pk>/assign", views.assign_conversation, name="assign-conversation"),
     path("agents", views.list_agents, name="list-agents"),
     path("teams-list", views.list_teams, name="teams-list"),
+    path("members/<uuid:user_id>/analytics", views.member_analytics, name="member-analytics"),
     path("insights/summary", insights.summary, name="insights-summary"),
     path("widget/embed.js", widget_api.embed_script, name="widget-embed-script"),
     path("widget/config", widget_api.widget_config, name="widget-config"),

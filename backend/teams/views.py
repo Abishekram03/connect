@@ -61,8 +61,34 @@ def list_members(request):
         return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
 
     memberships = Membership.objects.filter(organization=org).select_related("user", "invited_by")
+
+    # Annotate open conversation counts per member
+    from conversations.models import Conversation
+    from django.db.models import Count
+    open_counts = dict(
+        Conversation.objects.filter(
+            organization=org, status__in=["open", "pending"]
+        )
+        .values("assignee_id")
+        .annotate(count=Count("id"))
+        .values_list("assignee_id", "count")
+    )
+    total_counts = dict(
+        Conversation.objects.filter(
+            organization=org
+        )
+        .values("assignee_id")
+        .annotate(count=Count("id"))
+        .values_list("assignee_id", "count")
+    )
+
     serializer = MembershipSerializer(memberships, many=True)
-    return Response(serializer.data)
+    data = serializer.data
+    for m in data:
+        uid = m["user"]["id"]
+        m["open_conversations"] = open_counts.get(uid, 0)
+        m["total_conversations"] = total_counts.get(uid, 0)
+    return Response(data)
 
 
 @api_view(["POST"])
@@ -366,7 +392,34 @@ def get_team(request, pk):
     except Team.DoesNotExist:
         return Response({"detail": "Team not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    return Response(TeamDetailSerializer(team).data)
+    data = TeamDetailSerializer(team).data
+
+    # Add open conversation counts per member
+    from conversations.models import Conversation
+    from django.db.models import Count
+    team_user_ids = TeamMembership.objects.filter(team=team).values_list("user_id", flat=True)
+    open_counts = dict(
+        Conversation.objects.filter(
+            organization=org, assignee_id__in=team_user_ids, status__in=["open", "pending"]
+        )
+        .values("assignee_id")
+        .annotate(count=Count("id"))
+        .values_list("assignee_id", "count")
+    )
+    total_counts = dict(
+        Conversation.objects.filter(
+            organization=org, assignee_id__in=team_user_ids
+        )
+        .values("assignee_id")
+        .annotate(count=Count("id"))
+        .values_list("assignee_id", "count")
+    )
+    for m in data.get("members", []):
+        uid = m["user"]["id"]
+        m["open_conversations"] = open_counts.get(uid, 0)
+        m["total_conversations"] = total_counts.get(uid, 0)
+
+    return Response(data)
 
 
 @api_view(["PATCH"])

@@ -43,6 +43,24 @@ class AIConfig(models.Model):
     confidence_threshold = models.FloatField(default=0.5, help_text="Minimum confidence to auto-reply (0-1)")
     max_ai_turns = models.IntegerField(default=5, help_text="Max consecutive AI replies before escalating")
 
+    # Auto-routing settings
+    auto_assign_on_escalation = models.BooleanField(default=True, help_text="Auto-assign to agent on escalation")
+    auto_assign_routing = models.CharField(
+        max_length=20,
+        choices=[
+            ("least_busy", "Least Busy"),
+            ("round_robin", "Round Robin"),
+        ],
+        default="least_busy",
+        help_text="Routing strategy for auto-assignment"
+    )
+    auto_assign_team_id = models.UUIDField(
+        null=True, blank=True, help_text="Team to assign escalated conversations (null = org-wide)"
+    )
+    escalation_increase_priority = models.BooleanField(
+        default=True, help_text="Increase priority to 'high' on escalation"
+    )
+
     # Provider settings
     provider_base_url = models.URLField(
         default="https://openrouter.ai/api/v1",
@@ -60,6 +78,29 @@ class AIConfig(models.Model):
 
     def __str__(self):
         return f"AI Config for {self.organization.name}"
+
+
+class SLAConfig(models.Model):
+    """Per-organization SLA settings."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    organization = models.OneToOneField(
+        "accounts.Organization", on_delete=models.CASCADE, related_name="sla_config"
+    )
+    enabled = models.BooleanField(default=True)
+    urgent_hours = models.FloatField(default=1, help_text="SLA deadline for urgent priority (hours)")
+    high_hours = models.FloatField(default=4, help_text="SLA deadline for high priority (hours)")
+    normal_hours = models.FloatField(default=8, help_text="SLA deadline for normal priority (hours)")
+    low_hours = models.FloatField(default=24, help_text="SLA deadline for low priority (hours)")
+    warn_before_minutes = models.IntegerField(default=15, help_text="Warn before SLA breach (minutes)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "SLA Configuration"
+        verbose_name_plural = "SLA Configurations"
+
+    def __str__(self):
+        return f"SLA Config for {self.organization.name}"
 
 
 class KnowledgeSource(models.Model):

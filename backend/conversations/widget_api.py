@@ -65,6 +65,161 @@ def _validate_session_token(conversation, session_token):
     return conversation.session_token == session_token
 
 
+def _auto_assign_new_conversation(conversation):
+    """Auto-assign a new conversation to the least busy agent."""
+    try:
+        from teams.models import TeamMembership
+        from django.contrib.auth import get_user_model
+        from django.db.models import Count
+
+        User = get_user_model()
+        org = conversation.organization
+
+        agent_ids = TeamMembership.objects.filter(
+            team__organization=org,
+            role__in=["admin", "member"],
+        ).values_list("user_id", flat=True).distinct()
+
+        org_admin_ids = User.objects.filter(
+            organization=org,
+            role__in=["admin", "owner"],
+        ).values_list("id", flat=True)
+        all_agent_ids = list(set(list(agent_ids) + list(org_admin_ids)))
+
+        if not all_agent_ids:
+            return
+
+        agent_counts = (
+            Conversation.objects.filter(
+                assignee_id__in=all_agent_ids,
+                status__in=["open", "pending"],
+            )
+            .values("assignee_id")
+            .annotate(count=Count("id"))
+            .order_by("count")
+        )
+        assigned_ids = {c["assignee_id"] for c in agent_counts}
+        for agent_id in all_agent_ids:
+            if agent_id not in assigned_ids:
+                conversation.assignee_id = agent_id
+                break
+        else:
+            if agent_counts:
+                conversation.assignee_id = agent_counts[0]["assignee_id"]
+
+        conversation.assigned_at = timezone.now()
+        conversation.save(update_fields=["assignee", "assigned_at"])
+    except Exception:
+        pass
+
+
+def _auto_assign_escalation(conversation):
+    """Auto-assign escalated conversation to an available agent."""
+    try:
+        from ai_service.models import AIConfig
+        from teams.models import Team, TeamMembership
+        from django.contrib.auth import get_user_model
+        from django.db.models import Count
+
+        User = get_user_model()
+        ai_config = AIConfig.objects.filter(organization=conversation.organization).first()
+
+        if not ai_config or not ai_config.auto_assign_on_escalation:
+            return
+
+        # Increase priority if configured
+        if ai_config.escalation_increase_priority:
+            if conversation.priority in ("low", "normal"):
+                conversation.priority = "high"
+                conversation.save(update_fields=["priority"])
+
+        # Determine target team
+        target_team_id = ai_config.auto_assign_team_id
+        if target_team_id:
+            try:
+                team = Team.objects.get(pk=target_team_id, organization=conversation.organization)
+                conversation.team = team
+            except Team.DoesNotExist:
+                pass
+
+        # Get available agents
+        agent_ids = TeamMembership.objects.filter(
+            team__organization=conversation.organization,
+            role__in=["admin", "member"],
+        ).values_list("user_id", flat=True).distinct()
+
+        # Also include org admins/owners
+        org_admin_ids = User.objects.filter(
+            organization=conversation.organization,
+            role__in=["admin", "owner"],
+        ).values_list("id", flat=True)
+        all_agent_ids = list(set(list(agent_ids) + list(org_admin_ids)))
+
+        if not all_agent_ids:
+            return
+
+        if ai_config.auto_assign_routing == "least_busy":
+            # Find agent with fewest active conversations
+            agent_counts = (
+                Conversation.objects.filter(
+                    assignee_id__in=all_agent_ids,
+                    status__in=["open", "pending"],
+                )
+                .values("assignee_id")
+                .annotate(count=Count("id"))
+                .order_by("count")
+            )
+            assigned_ids = {c["assignee_id"] for c in agent_counts}
+            for agent_id in all_agent_ids:
+                if agent_id not in assigned_ids:
+                    conversation.assignee_id = agent_id
+                    break
+            else:
+                if agent_counts:
+                    conversation.assignee_id = agent_counts[0]["assignee_id"]
+        else:
+            # Round-robin: pick the agent who was assigned least recently
+            from django.db.models import Max
+            last_assigned = (
+                Conversation.objects.filter(
+                    assignee_id__in=all_agent_ids,
+                )
+                .values("assignee_id")
+                .annotate(last_assigned=Max("assigned_at"))
+                .order_by("last_assigned")
+            )
+            assigned_set = {c["assignee_id"] for c in last_assigned}
+            for agent_id in all_agent_ids:
+                if agent_id not in assigned_set:
+                    conversation.assignee_id = agent_id
+                    break
+            else:
+                if last_assigned:
+                    conversation.assignee_id = last_assigned[0]["assignee_id"]
+
+        conversation.assigned_at = timezone.now()
+        conversation.save(update_fields=["assignee", "team", "assigned_at", "priority"])
+
+        # Notify the assigned agent specifically
+        if conversation.assignee_id:
+            try:
+                from notifications.views import create_notification
+                assigned_user = User.objects.get(pk=conversation.assignee_id)
+                create_notification(
+                    org=conversation.organization,
+                    notification_type="escalation",
+                    title=f"Escalation assigned to you: {conversation.customer_name or f'Visitor #{conversation.ticket_id}'}",
+                    body=f"You have been assigned a new escalated conversation",
+                    conversation=conversation,
+                    recipient=assigned_user,
+                )
+            except Exception:
+                pass
+
+    except Exception:
+        pass  # Don't break widget flow if auto-assign fails
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 @throttle_classes([WidgetConfigThrottle])
@@ -211,6 +366,19 @@ def widget_conversations(request):
         subject=subject,
     )
 
+    # Auto-assign new conversation to least busy agent
+    try:
+        _auto_assign_new_conversation(conversation)
+    except Exception:
+        pass
+
+    # Compute SLA deadline based on priority
+    try:
+        conversation.sla_deadline = conversation.compute_sla_deadline()
+        conversation.save(update_fields=["sla_deadline"])
+    except Exception:
+        pass
+
     # Create notification for new conversation
     try:
         from notifications.views import create_notification
@@ -349,6 +517,8 @@ def conversation_messages(request, pk):
                     )
                 except Exception:
                     pass
+                # Auto-assign to agent if configured
+                _auto_assign_escalation(conversation)
             else:
                 provider = get_provider(conversation.organization)
 
@@ -436,6 +606,9 @@ def conversation_messages(request, pk):
                         )
                     except Exception:
                         pass
+
+                    # Auto-assign to agent if configured
+                    _auto_assign_escalation(conversation)
     except Exception:
         pass  # Don't break the widget flow if AI fails
 

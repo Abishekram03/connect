@@ -17,7 +17,7 @@ import {
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/lib/api-client";
 import { useToast } from "@/components/toast";
-import { fetchAIConfig, updateAIConfig, type AIConfig } from "@/lib/ai-service";
+import { fetchAIConfig, updateAIConfig, fetchSLAConfig, updateSLAConfig, type AIConfig, type SLAConfig } from "@/lib/ai-service";
 import { storeUser } from "@/lib/auth-service";
 
 type Tab = "account" | "general" | "ai" | "notifications" | "billing";
@@ -59,6 +59,8 @@ export default function SettingsPage() {
   const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
   const [aiSaving, setAiSaving] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [slaConfig, setSlaConfig] = useState<SLAConfig | null>(null);
+  const [slaSaving, setSlaSaving] = useState(false);
   const [settingsReloadKey, setSettingsReloadKey] = useState(0);
 
   useEffect(() => {
@@ -93,8 +95,9 @@ export default function SettingsPage() {
         }
         return null;
       }),
+      fetchSLAConfig().catch(() => null),
     ])
-      .then(([n, ai]) => {
+      .then(([n, ai, sla]) => {
         if (cancelled) return;
 
         if (n) {
@@ -112,6 +115,10 @@ export default function SettingsPage() {
           setAiConfig(ai);
         } else {
           setAiError("AI settings could not be loaded.");
+        }
+
+        if (sla) {
+          setSlaConfig(sla);
         }
       })
       .catch(() => {
@@ -232,6 +239,25 @@ export default function SettingsPage() {
   ) => {
     if (!aiConfig) return;
     saveAIField(key, !aiConfig[key]);
+  };
+
+  const saveSLAField = async <K extends keyof SLAConfig>(
+    key: K,
+    value: SLAConfig[K],
+  ) => {
+    if (!slaConfig) return;
+    setSlaSaving(true);
+    const previous = slaConfig;
+    setSlaConfig({ ...slaConfig, [key]: value });
+    try {
+      await updateSLAConfig({ [key]: value } as Partial<SLAConfig>);
+      toast.success("SLA settings saved");
+    } catch {
+      setSlaConfig(previous);
+      toast.error("Failed to save SLA settings");
+    } finally {
+      setSlaSaving(false);
+    }
   };
 
   const allTabs: {
@@ -773,6 +799,125 @@ export default function SettingsPage() {
                     </button>
                   </div>
                 )}
+
+                {/* SLA Configuration */}
+                <div className="border-t border-border pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-ink">SLA Settings</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Set response time targets per priority level</p>
+                    </div>
+                    {slaSaving && (
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Saving...
+                      </div>
+                    )}
+                  </div>
+                  {slaConfig ? (
+                    <div className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => saveSLAField("enabled", !slaConfig.enabled)}
+                        disabled={slaSaving}
+                        className="flex w-full items-center justify-between rounded-lg border border-border px-5 py-4 text-left cursor-pointer hover:bg-surface-2 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-ink">Enable SLA Tracking</p>
+                          <p className="text-xs text-muted-foreground">Track response time targets and detect breaches</p>
+                        </div>
+                        <div className={`relative h-6 w-10 rounded-full transition-colors ${slaConfig.enabled ? "bg-accent" : "bg-border"}`}>
+                          <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${slaConfig.enabled ? "translate-x-4.5 left-0.5" : "left-0.5"}`} />
+                        </div>
+                      </button>
+                      {slaConfig.enabled && (
+                        <div className="rounded-lg border border-border p-4 space-y-3">
+                          <p className="text-xs font-medium text-muted-foreground">Deadline per Priority (hours)</p>
+                          {([
+                            { key: "urgent_hours" as const, label: "Urgent", color: "text-red-600" },
+                            { key: "high_hours" as const, label: "High", color: "text-orange-600" },
+                            { key: "normal_hours" as const, label: "Normal", color: "text-blue-600" },
+                            { key: "low_hours" as const, label: "Low", color: "text-muted-foreground" },
+                          ]).map(({ key, label, color }) => (
+                            <div key={key} className="flex items-center justify-between">
+                              <span className={`text-sm font-medium ${color}`}>{label}</span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number" min={0.5} step={0.5} value={slaConfig[key]}
+                                  onChange={(e) => saveSLAField(key, parseFloat(e.target.value) || 1)}
+                                  disabled={slaSaving}
+                                  className="w-20 rounded-md border border-border bg-surface px-2 py-1 text-sm text-ink text-right outline-none"
+                                />
+                                <span className="text-xs text-muted-foreground w-8">hrs</span>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between pt-2 border-t border-border">
+                            <span className="text-sm text-muted-foreground">Warn before breach</span>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number" min={5} step={5} value={slaConfig.warn_before_minutes}
+                                onChange={(e) => saveSLAField("warn_before_minutes", parseInt(e.target.value) || 15)}
+                                disabled={slaSaving}
+                                className="w-20 rounded-md border border-border bg-surface px-2 py-1 text-sm text-ink text-right outline-none"
+                              />
+                              <span className="text-xs text-muted-foreground w-8">min</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Auto-routing */}
+                      <div className="mt-4 border-t border-border pt-4">
+                        <h4 className="text-sm font-semibold text-ink mb-3">Auto-Routing on Escalation</h4>
+                        <div className="space-y-3">
+                          <button
+                            type="button"
+                            onClick={() => saveAIField("auto_assign_on_escalation" as any, !(aiConfig as any).auto_assign_on_escalation)}
+                            disabled={aiSaving}
+                            className="flex w-full items-center justify-between rounded-lg border border-border px-5 py-4 text-left cursor-pointer hover:bg-surface-2 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-ink">Auto-Assign on Escalation</p>
+                              <p className="text-xs text-muted-foreground">Automatically assign an agent when AI escalates</p>
+                            </div>
+                            <div className={`relative h-6 w-10 rounded-full transition-colors ${(aiConfig as any).auto_assign_on_escalation ? "bg-accent" : "bg-border"}`}>
+                              <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${(aiConfig as any).auto_assign_on_escalation ? "translate-x-4.5 left-0.5" : "left-0.5"}`} />
+                            </div>
+                          </button>
+                          {(aiConfig as any).auto_assign_on_escalation && (
+                            <div className="rounded-lg border border-border p-4 space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-muted-foreground">Routing Strategy</span>
+                                <select
+                                  value={(aiConfig as any).auto_assign_routing || "least_busy"}
+                                  onChange={(e) => saveAIField("auto_assign_routing" as any, e.target.value)}
+                                  disabled={aiSaving}
+                                  className="rounded-md border border-border bg-surface px-2 py-1 text-sm text-ink outline-none"
+                                >
+                                  <option value="least_busy">Least Busy</option>
+                                  <option value="round_robin">Round Robin</option>
+                                </select>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-muted-foreground">Increase Priority</span>
+                                <button
+                                  type="button"
+                                  onClick={() => saveAIField("escalation_increase_priority" as any, !(aiConfig as any).escalation_increase_priority)}
+                                  disabled={aiSaving}
+                                  className={`relative h-6 w-10 rounded-full transition-colors ${(aiConfig as any).escalation_increase_priority ? "bg-accent" : "bg-border"}`}
+                                >
+                                  <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${(aiConfig as any).escalation_increase_priority ? "translate-x-4.5 left-0.5" : "left-0.5"}`} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Loading SLA settings...</p>
+                  )}
+                </div>
               </div>
             )}
 

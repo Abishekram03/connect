@@ -5,7 +5,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.response import Response
 from rest_framework.throttling import AnonRateThrottle
 
-from .models import AIConfig, KnowledgeSource, DocumentChunk, AIReplyLog
+from .models import AIConfig, KnowledgeSource, DocumentChunk, AIReplyLog, SLAConfig
 from .serializers import (
     AIConfigSerializer,
     KnowledgeSourceSerializer,
@@ -13,6 +13,7 @@ from .serializers import (
     DocumentChunkSerializer,
     AIReplyLogSerializer,
     AutoReplyRequestSerializer,
+    SLAConfigSerializer,
 )
 from .rag import (
     get_provider,
@@ -463,4 +464,156 @@ def ai_reply_logs(request):
 
     logs = AIReplyLog.objects.filter(organization=org)[:50]
     serializer = AIReplyLogSerializer(logs, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def ai_analytics(request):
+    """Get AI usage analytics for the organization."""
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    from django.db.models import Avg, Count, Sum, Q
+    from datetime import timedelta
+
+    period = request.query_params.get("period", "7d")
+    now = timezone.now()
+    if period == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "30d":
+        start = now - timedelta(days=30)
+    else:
+        start = now - timedelta(days=7)
+
+    logs = AIReplyLog.objects.filter(organization=org, created_at__gte=start)
+
+    # Total replies
+    total_replies = logs.count()
+
+    # Token usage
+    total_prompt_tokens = logs.aggregate(total=Sum("prompt_tokens"))["total"] or 0
+    total_completion_tokens = logs.aggregate(total=Sum("completion_tokens"))["total"] or 0
+    total_tokens = total_prompt_tokens + total_completion_tokens
+
+    # Avg confidence
+    avg_confidence = logs.aggregate(avg=Avg("confidence"))["avg"]
+    if avg_confidence is not None:
+        avg_confidence = round(avg_confidence, 3)
+
+    # Escalation stats
+    escalated = logs.filter(escalated=True).count()
+    escalation_rate = None
+    if total_replies > 0:
+        escalation_rate = round((escalated / total_replies) * 100, 1)
+
+    # Escalation reasons breakdown
+    escalation_reasons = (
+        logs.filter(escalated=True)
+        .values("escalation_reason")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    escalation_breakdown = {
+        item["escalation_reason"] or "unknown": item["count"]
+        for item in escalation_reasons
+    }
+
+    # Model usage breakdown
+    model_usage = (
+        logs.values("model_used")
+        .annotate(count=Count("id"))
+        .order_by("-count")
+    )
+    model_breakdown = {item["model_used"]: item["count"] for item in model_usage}
+
+    # AI resolved (not escalated)
+    ai_resolved = total_replies - escalated
+
+    # Daily trend
+    from django.db.models.functions import TruncDate
+    daily_data = (
+        logs
+        .annotate(day=TruncDate("created_at"))
+        .values("day")
+        .annotate(
+            replies=Count("id"),
+            avg_confidence=Avg("confidence"),
+            escalated_count=Count("id", filter=Q(escalated=True)),
+        )
+        .order_by("day")
+    )
+    daily_trend = [
+        {
+            "date": item["day"].isoformat() if item["day"] else None,
+            "replies": item["replies"],
+            "avg_confidence": round(item["avg_confidence"], 3) if item["avg_confidence"] else 0,
+            "escalated": item["escalated_count"],
+        }
+        for item in daily_data
+    ]
+
+    # Recent logs
+    recent_logs = logs[:10]
+    recent_data = [
+        {
+            "id": str(log.id),
+            "model_used": log.model_used,
+            "confidence": log.confidence,
+            "escalated": log.escalated,
+            "escalation_reason": log.escalation_reason,
+            "prompt_tokens": log.prompt_tokens,
+            "completion_tokens": log.completion_tokens,
+            "created_at": log.created_at.isoformat(),
+            "conversation_id": str(log.conversation_id),
+        }
+        for log in recent_logs
+    ]
+
+    return Response({
+        "period": period,
+        "total_replies": total_replies,
+        "tokens": {
+            "total": total_tokens,
+            "prompt": total_prompt_tokens,
+            "completion": total_completion_tokens,
+        },
+        "avg_confidence": avg_confidence,
+        "escalation": {
+            "total": escalated,
+            "rate": escalation_rate,
+            "reasons": escalation_breakdown,
+        },
+        "ai_resolved": ai_resolved,
+        "model_usage": model_breakdown,
+        "daily_trend": daily_trend,
+        "recent_logs": recent_data,
+    })
+
+
+# ── SLA Config ──
+
+@api_view(["GET", "PATCH"])
+@permission_classes([permissions.IsAuthenticated])
+def sla_config_detail(request):
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    config, _ = SLAConfig.objects.get_or_create(organization=org)
+
+    if request.method == "GET":
+        serializer = SLAConfigSerializer(config)
+        return Response(serializer.data)
+
+    if not require_admin_or_owner(request.user):
+        return Response(
+            {"detail": "Only admins and owners can modify SLA configuration"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    serializer = SLAConfigSerializer(config, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
     return Response(serializer.data)

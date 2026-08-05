@@ -1,6 +1,9 @@
 import uuid
+from datetime import timedelta
+
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class Conversation(models.Model):
@@ -44,6 +47,14 @@ class Conversation(models.Model):
     team = models.ForeignKey(
         "teams.Team", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
     )
+
+    # SLA fields
+    assigned_at = models.DateTimeField(null=True, blank=True)
+    first_response_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    sla_deadline = models.DateTimeField(null=True, blank=True)
+    sla_breached = models.BooleanField(default=False)
+
     last_message_at = models.DateTimeField(auto_now_add=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -59,6 +70,41 @@ class Conversation(models.Model):
             ).aggregate(models.Max("ticket_id"))["ticket_id__max"]
             self.ticket_id = (max_ticket or 0) + 1
         super().save(*args, **kwargs)
+
+    def compute_sla_deadline(self):
+        """Compute SLA deadline based on priority and org SLA config."""
+        from ai_service.models import SLAConfig
+        try:
+            sla_config = SLAConfig.objects.get(organization=self.organization)
+        except SLAConfig.DoesNotExist:
+            from django.conf import settings as django_settings
+            sla_config = None
+
+        priority_hours = {
+            "urgent": getattr(sla_config, "urgent_hours", 1) if sla_config else 1,
+            "high": getattr(sla_config, "high_hours", 4) if sla_config else 4,
+            "normal": getattr(sla_config, "normal_hours", 8) if sla_config else 8,
+            "low": getattr(sla_config, "low_hours", 24) if sla_config else 24,
+        }
+        hours = priority_hours.get(self.priority, 8)
+        return timezone.now() + timedelta(hours=hours)
+
+    def get_sla_status(self):
+        """Return SLA status: 'on_track', 'warning', 'breached', or 'none'."""
+        if not self.sla_deadline:
+            return "none"
+        now = timezone.now()
+        if self.sla_breached or now > self.sla_deadline:
+            return "breached"
+        from ai_service.models import SLAConfig
+        try:
+            sla_config = SLAConfig.objects.get(organization=self.organization)
+            warn_minutes = sla_config.warn_before_minutes
+        except SLAConfig.DoesNotExist:
+            warn_minutes = 15
+        if self.sla_deadline - now <= timedelta(minutes=warn_minutes):
+            return "warning"
+        return "on_track"
 
     def __str__(self):
         return f"{self.customer_name or 'Unknown'} - {self.subject or 'No subject'}"

@@ -16,10 +16,12 @@ import {
   Mail,
   ChevronDown,
   Pencil,
+  BarChart3,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-dialog";
+import { api } from "@/lib/api-client";
 import {
   teamsApi,
   type Membership,
@@ -31,6 +33,7 @@ import {
 
 type Tab = "teams" | "members";
 type TeamTab = "members" | "analytics";
+type MemberTab = "details" | "analytics";
 
 export default function TeamsPage() {
   const { user } = useAuth();
@@ -38,6 +41,7 @@ export default function TeamsPage() {
   const { confirm } = useConfirm();
   const [tab, setTab] = useState<Tab>("members");
   const [teamTab, setTeamTab] = useState<TeamTab>("members");
+  const [memberTab, setMemberTab] = useState<MemberTab>("details");
   const [teams, setTeams] = useState<Team[]>([]);
   const [members, setMembers] = useState<Membership[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -45,6 +49,8 @@ export default function TeamsPage() {
   const [selectedTeam, setSelectedTeam] = useState<TeamDetail | null>(null);
   const [teamAnalytics, setTeamAnalytics] = useState<TeamAnalytics | null>(null);
   const [selectedMember, setSelectedMember] = useState<Membership | null>(null);
+  const [memberAnalytics, setMemberAnalytics] = useState<any>(null);
+  const [memberAnalyticsLoading, setMemberAnalyticsLoading] = useState(false);
   const [showCreateTeam, setShowCreateTeam] = useState(false);
   const [showInviteMember, setShowInviteMember] = useState(false);
   const [showAddMembers, setShowAddMembers] = useState(false);
@@ -266,6 +272,18 @@ export default function TeamsPage() {
     }
   };
 
+  const loadMemberAnalytics = async (userId: string) => {
+    setMemberAnalyticsLoading(true);
+    try {
+      const data = await api.get(`/api/members/${userId}/analytics?period=7d`);
+      setMemberAnalytics(data);
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setMemberAnalyticsLoading(false);
+    }
+  };
+
   const canManageMember = (member: Membership) => {
     if (!isAdmin) return false;
     if (member.role === "owner") return false;
@@ -393,7 +411,7 @@ export default function TeamsPage() {
                     return (
                     <button
                       key={member.id}
-                      onClick={() => setSelectedMember(member)}
+                      onClick={() => { setSelectedMember(member); setMemberTab("details"); }}
                       className={`w-full flex items-center gap-2.5 rounded-lg px-4 py-2.5 transition-colors ${
                         selectedMember?.id === member.id
                           ? "bg-surface-2"
@@ -418,6 +436,9 @@ export default function TeamsPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${member.open_conversations > 0 ? "bg-blue-100 text-blue-700" : "bg-surface-2 text-muted-foreground"}`} title={`${member.open_conversations} open / ${member.total_conversations} total`}>
+                          {member.open_conversations}/{member.total_conversations}
+                        </span>
                         <span className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium ${
                           member.role === "owner"
                             ? "bg-purple-100 text-purple-700"
@@ -595,91 +616,114 @@ export default function TeamsPage() {
                           )}
                         </div>
                       ) : (
-                        <div className="space-y-1">
-                          {selectedTeam.members.map((tm) => {
-                            const isTeamMe = user?.email === tm.user.email;
-                            return (
-                            <div key={tm.id} className="flex items-center justify-between rounded-lg border border-border px-4 py-2.5">
-                              <div className="flex items-center gap-2.5">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
-                                  {tm.user.name?.charAt(0) || tm.user.email.charAt(0).toUpperCase()}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium text-ink">
-                                    {tm.user.name || tm.user.email}
-                                    {isTeamMe && (
-                                      <span className="ml-1.5 inline-flex items-center rounded bg-ink px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">You</span>
-                                    )}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">{tm.user.email}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                {isAdmin ? (
-                                  <div className="relative">
-                                    <button
-                                      onClick={() => setTeamMemberRoleTarget(teamMemberRoleTarget?.userId === tm.user.id ? null : { userId: tm.user.id, currentRole: tm.role })}
-                                      className={`flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium hover:bg-surface-2 ${
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-border text-left text-xs font-medium text-muted-foreground">
+                                <th className="pb-2 pr-4">Name</th>
+                                <th className="pb-2 pr-4">Role</th>
+                                <th className="pb-2 pr-4 text-center">Assigned</th>
+                                <th className="pb-2 w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedTeam.members.map((tm) => {
+                                const isTeamMe = user?.email === tm.user.email;
+                                return (
+                                <tr key={tm.id} className="border-b border-border/50 hover:bg-surface-2 transition-colors">
+                                  <td className="py-2.5 pr-4">
+                                    <div className="flex items-center gap-2.5">
+                                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/20 text-xs font-medium text-accent">
+                                        {tm.user.name?.charAt(0) || tm.user.email.charAt(0).toUpperCase()}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-sm font-medium text-ink truncate">
+                                          {tm.user.name || tm.user.email}
+                                          {isTeamMe && (
+                                            <span className="ml-1.5 inline-flex items-center rounded bg-ink px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground">You</span>
+                                          )}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground truncate">{tm.user.email}</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 pr-4">
+                                    {isAdmin ? (
+                                      <div className="relative">
+                                        <button
+                                          onClick={() => setTeamMemberRoleTarget(teamMemberRoleTarget?.userId === tm.user.id ? null : { userId: tm.user.id, currentRole: tm.role })}
+                                          className={`flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] font-medium hover:bg-surface ${
+                                            tm.role === "admin" ? "text-blue-600" : "text-muted-foreground"
+                                          }`}
+                                        >
+                                          {tm.role === "admin" ? <Shield className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                                          {tm.role}
+                                          <ChevronDown className="h-3 w-3" />
+                                        </button>
+                                        {teamMemberRoleTarget?.userId === tm.user.id && (
+                                          <>
+                                            <div className="fixed inset-0 z-10" onClick={() => setTeamMemberRoleTarget(null)} />
+                                            <div className="absolute left-0 top-full z-20 mt-1 w-40 rounded-lg border border-border bg-card p-1 shadow-lg">
+                                              <button
+                                                onClick={() => handleChangeTeamMemberRole(tm.user.id, "admin")}
+                                                disabled={actionLoading || tm.role === "admin"}
+                                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40"
+                                              >
+                                                <Shield className="h-3.5 w-3.5 text-blue-500" />
+                                                <div>
+                                                  <p className="font-medium">Admin</p>
+                                                  <p className="text-[10px] text-muted-foreground">Manage team</p>
+                                                </div>
+                                                {tm.role === "admin" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                              </button>
+                                              <button
+                                                onClick={() => handleChangeTeamMemberRole(tm.user.id, "member")}
+                                                disabled={actionLoading || tm.role === "member"}
+                                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40"
+                                              >
+                                                <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                                                <div>
+                                                  <p className="font-medium">Member</p>
+                                                  <p className="text-[10px] text-muted-foreground">Handle conversations</p>
+                                                </div>
+                                                {tm.role === "member" && <Check className="ml-auto h-3.5 w-3.5" />}
+                                              </button>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${
                                         tm.role === "admin" ? "text-blue-600" : "text-muted-foreground"
-                                      }`}
-                                    >
-                                      {tm.role === "admin" ? <Shield className="h-3 w-3" /> : <Users className="h-3 w-3" />}
-                                      {tm.role}
-                                      <ChevronDown className="h-3 w-3" />
-                                    </button>
-                                    {teamMemberRoleTarget?.userId === tm.user.id && (
-                                      <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setTeamMemberRoleTarget(null)} />
-                                        <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-border bg-card p-1 shadow-lg">
-                                          <button
-                                            onClick={() => handleChangeTeamMemberRole(tm.user.id, "admin")}
-                                            disabled={actionLoading || tm.role === "admin"}
-                                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40"
-                                          >
-                                            <Shield className="h-3.5 w-3.5 text-blue-500" />
-                                            <div>
-                                              <p className="font-medium">Admin</p>
-                                              <p className="text-[10px] text-muted-foreground">Manage team</p>
-                                            </div>
-                                            {tm.role === "admin" && <Check className="ml-auto h-3.5 w-3.5" />}
-                                          </button>
-                                          <button
-                                            onClick={() => handleChangeTeamMemberRole(tm.user.id, "member")}
-                                            disabled={actionLoading || tm.role === "member"}
-                                            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40"
-                                          >
-                                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                                            <div>
-                                              <p className="font-medium">Member</p>
-                                              <p className="text-[10px] text-muted-foreground">Handle conversations</p>
-                                            </div>
-                                            {tm.role === "member" && <Check className="ml-auto h-3.5 w-3.5" />}
-                                          </button>
-                                        </div>
-                                      </>
+                                      }`}>
+                                        {tm.role === "admin" ? <Shield className="h-3 w-3" /> : <Users className="h-3 w-3" />}
+                                        {tm.role}
+                                      </span>
                                     )}
-                                  </div>
-                                ) : (
-                                  <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium ${
-                                    tm.role === "admin" ? "text-blue-600" : "text-muted-foreground"
-                                  }`}>
-                                    {tm.role === "admin" ? <Shield className="h-3 w-3" /> : <Users className="h-3 w-3" />}
-                                    {tm.role}
-                                  </span>
-                                )}
-                                {isAdmin && (
-                                  <button
-                                    onClick={() => handleRemoveTeamMember(selectedTeam.id, tm.user.id)}
-                                    className="rounded p-1 text-muted-foreground hover:text-red-500"
-                                    title="Remove from team"
-                                  >
-                                    <X className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            );
-                          })}
+                                  </td>
+                                  <td className="py-2.5 pr-4 text-center">
+                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                                      tm.open_conversations > 0 ? "bg-blue-50 text-blue-700" : "bg-surface-2 text-muted-foreground"
+                                    }`}>
+                                      {tm.open_conversations}/{tm.total_conversations}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5">
+                                    {isAdmin && (
+                                      <button
+                                        onClick={() => handleRemoveTeamMember(selectedTeam.id, tm.user.id)}
+                                        className="rounded p-1 text-muted-foreground hover:text-red-500"
+                                        title="Remove from team"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
                         </div>
                       )}
                     </>
@@ -783,8 +827,9 @@ export default function TeamsPage() {
                 </div>
               </div>
             ) : tab === "members" && selectedMember ? (
-              <div className="flex flex-1 flex-col overflow-y-auto p-5">
-                <div className="flex items-center gap-4 mb-5">
+              <div className="flex flex-1 flex-col overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center gap-4 border-b border-border px-5 py-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 text-base font-medium text-accent">
                     {selectedMember.user.name?.charAt(0) ||
                       selectedMember.user.email.charAt(0).toUpperCase()}
@@ -824,94 +869,201 @@ export default function TeamsPage() {
                   </div>
                 </div>
 
-                <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="rounded-lg border border-border bg-surface p-4">
-                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                      <Shield className="h-3.5 w-3.5" />
-                      <span className="text-xs font-medium">Role</span>
-                    </div>
-                    {canManageMember(selectedMember) ? (
-                      <div className="relative">
-                        <button
-                          onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                          className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-1.5 text-sm text-ink hover:bg-surface-2"
-                        >
-                          <span className="capitalize">{selectedMember.role}</span>
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        </button>
-                        {showRoleDropdown && (
-                          <>
-                            <div className="fixed inset-0 z-10" onClick={() => setShowRoleDropdown(false)} />
-                            <div className="absolute left-0 top-full z-20 mt-1 w-full rounded-lg border border-border bg-card p-1 shadow-lg">
-                              <button
-                                onClick={() => handleChangeRole(selectedMember, "admin")}
-                                disabled={actionLoading || selectedMember.role === "admin"}
-                                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40 ${
-                                  selectedMember.role === "admin" ? "font-medium text-ink" : "text-ink"
-                                }`}
-                              >
-                                <Shield className="h-4 w-4 text-blue-500" />
-                                <div>
-                                  <p className="font-medium">Admin</p>
-                                  <p className="text-xs text-muted-foreground">Can manage members and teams</p>
-                                </div>
-                                {selectedMember.role === "admin" && <Check className="ml-auto h-4 w-4" />}
-                              </button>
-                              <button
-                                onClick={() => handleChangeRole(selectedMember, "agent")}
-                                disabled={actionLoading || selectedMember.role === "agent"}
-                                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40 ${
-                                  selectedMember.role === "agent" ? "font-medium text-ink" : "text-ink"
-                                }`}
-                              >
-                                <Users className="h-4 w-4 text-muted-foreground" />
-                                <div>
-                                  <p className="font-medium">Agent</p>
-                                  <p className="text-xs text-muted-foreground">Can handle conversations</p>
-                                </div>
-                                {selectedMember.role === "agent" && <Check className="ml-auto h-4 w-4" />}
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-sm font-medium text-ink capitalize">
-                        {selectedMember.role}
-                      </p>
-                    )}
-                  </div>
-                  <div className="rounded-lg border border-border bg-surface p-4">
-                    <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
-                      <Users className="h-3.5 w-3.5" />
-                      <span className="text-xs font-medium">Teams</span>
-                    </div>
-                    <p className="text-sm font-medium text-ink">
-                      {selectedTeam?.members?.filter((tm) => tm.user.id === selectedMember.user.id).length || 0}
-                    </p>
-                  </div>
+                {/* Member tabs */}
+                <div className="flex border-b border-border px-5">
+                  <button
+                    onClick={() => setMemberTab("details")}
+                    className={`mr-4 border-b-2 py-2.5 text-sm font-medium transition-colors ${
+                      memberTab === "details"
+                        ? "border-ink text-ink"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Details
+                  </button>
+                  <button
+                    onClick={() => {
+                      setMemberTab("analytics");
+                      loadMemberAnalytics(selectedMember.user.id);
+                    }}
+                    className={`border-b-2 py-2.5 text-sm font-medium transition-colors ${
+                      memberTab === "analytics"
+                        ? "border-ink text-ink"
+                        : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Analytics
+                  </button>
                 </div>
 
-                <div>
-                  <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Details
-                  </p>
-                  <div className="rounded-lg border border-border divide-y divide-border">
-                    <div className="flex items-center justify-between px-4 py-3">
-                      <span className="text-sm text-muted-foreground">Joined</span>
-                      <span className="text-sm text-ink">
-                        {new Date(selectedMember.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    {selectedMember.invited_by && (
-                      <div className="flex items-center justify-between px-4 py-3">
-                        <span className="text-sm text-muted-foreground">Invited by</span>
-                        <span className="text-sm text-ink">
-                          {selectedMember.invited_by.name || selectedMember.invited_by.email}
-                        </span>
+                {/* Tab content */}
+                <div className="flex-1 overflow-y-auto p-5">
+                  {memberTab === "details" ? (
+                    <>
+                      <div className="mb-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="rounded-lg border border-border bg-surface p-4">
+                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                            <Shield className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">Role</span>
+                          </div>
+                          {canManageMember(selectedMember) ? (
+                            <div className="relative">
+                              <button
+                                onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                                className="flex w-full items-center justify-between rounded-md border border-border bg-card px-3 py-1.5 text-sm text-ink hover:bg-surface-2"
+                              >
+                                <span className="capitalize">{selectedMember.role}</span>
+                                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                              </button>
+                              {showRoleDropdown && (
+                                <>
+                                  <div className="fixed inset-0 z-10" onClick={() => setShowRoleDropdown(false)} />
+                                  <div className="absolute left-0 top-full z-20 mt-1 w-full rounded-lg border border-border bg-card p-1 shadow-lg">
+                                    <button
+                                      onClick={() => handleChangeRole(selectedMember, "admin")}
+                                      disabled={actionLoading || selectedMember.role === "admin"}
+                                      className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40 ${
+                                        selectedMember.role === "admin" ? "font-medium text-ink" : "text-ink"
+                                      }`}
+                                    >
+                                      <Shield className="h-4 w-4 text-blue-500" />
+                                      <div>
+                                        <p className="font-medium">Admin</p>
+                                        <p className="text-xs text-muted-foreground">Can manage members and teams</p>
+                                      </div>
+                                      {selectedMember.role === "admin" && <Check className="ml-auto h-4 w-4" />}
+                                    </button>
+                                    <button
+                                      onClick={() => handleChangeRole(selectedMember, "agent")}
+                                      disabled={actionLoading || selectedMember.role === "agent"}
+                                      className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface-2 disabled:opacity-40 ${
+                                        selectedMember.role === "agent" ? "font-medium text-ink" : "text-ink"
+                                      }`}
+                                    >
+                                      <Users className="h-4 w-4 text-muted-foreground" />
+                                      <div>
+                                        <p className="font-medium">Agent</p>
+                                        <p className="text-xs text-muted-foreground">Can handle conversations</p>
+                                      </div>
+                                      {selectedMember.role === "agent" && <Check className="ml-auto h-4 w-4" />}
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-sm font-medium text-ink capitalize">
+                              {selectedMember.role}
+                            </p>
+                          )}
+                        </div>
+                        <div className="rounded-lg border border-border bg-surface p-4">
+                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1">
+                            <Users className="h-3.5 w-3.5" />
+                            <span className="text-xs font-medium">Teams</span>
+                          </div>
+                          <p className="text-sm font-medium text-ink">
+                            {selectedTeam?.members?.filter((tm) => tm.user.id === selectedMember.user.id).length || 0}
+                          </p>
+                        </div>
                       </div>
-                    )}
-                  </div>
+
+                      <div>
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          Details
+                        </p>
+                        <div className="rounded-lg border border-border divide-y divide-border">
+                          <div className="flex items-center justify-between px-4 py-3">
+                            <span className="text-sm text-muted-foreground">Joined</span>
+                            <span className="text-sm text-ink">
+                              {new Date(selectedMember.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          {selectedMember.invited_by && (
+                            <div className="flex items-center justify-between px-4 py-3">
+                              <span className="text-sm text-muted-foreground">Invited by</span>
+                              <span className="text-sm text-ink">
+                                {selectedMember.invited_by.name || selectedMember.invited_by.email}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    /* Analytics tab */
+                    <>
+                      {memberAnalyticsLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                        </div>
+                      ) : !memberAnalytics ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                          <BarChart3 className="mb-3 h-10 w-10 text-border" />
+                          <p className="text-sm text-muted-foreground">No analytics data</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-5">
+                          {/* Stat cards */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-lg border border-border p-4">
+                              <p className="text-xs text-muted-foreground">Conversations</p>
+                              <p className="mt-1 text-2xl font-bold text-ink">{memberAnalytics.conversations.total}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {memberAnalytics.conversations.resolved} resolved
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border p-4">
+                              <p className="text-xs text-muted-foreground">Messages Sent</p>
+                              <p className="mt-1 text-2xl font-bold text-ink">{memberAnalytics.messages.sent}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {memberAnalytics.messages.human_replies} human / {memberAnalytics.messages.ai_replies} AI
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border p-4">
+                              <p className="text-xs text-muted-foreground">Avg First Response</p>
+                              <p className="mt-1 text-2xl font-bold text-ink">
+                                {memberAnalytics.response_times.avg_first_response_minutes !== null
+                                  ? `${memberAnalytics.response_times.avg_first_response_minutes}m`
+                                  : "N/A"}
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border p-4">
+                              <p className="text-xs text-muted-foreground">Avg Resolution</p>
+                              <p className="mt-1 text-2xl font-bold text-ink">
+                                {memberAnalytics.response_times.avg_resolution_minutes !== null
+                                  ? `${memberAnalytics.response_times.avg_resolution_minutes}m`
+                                  : "N/A"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* SLA + Escalation */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="rounded-lg border border-border p-4">
+                              <p className="text-xs text-muted-foreground">SLA Compliance</p>
+                              <p className="mt-1 text-2xl font-bold text-ink">
+                                {memberAnalytics.sla.compliance_rate !== null
+                                  ? `${memberAnalytics.sla.compliance_rate}%`
+                                  : "N/A"}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {memberAnalytics.sla.breached} breached / {memberAnalytics.sla.total} total
+                              </p>
+                            </div>
+                            <div className="rounded-lg border border-border p-4">
+                              <p className="text-xs text-muted-foreground">Escalation Rate</p>
+                              <p className="mt-1 text-2xl font-bold text-ink">
+                                {memberAnalytics.escalation_rate !== null
+                                  ? `${memberAnalytics.escalation_rate}%`
+                                  : "N/A"}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             ) : tab === "teams" ? (

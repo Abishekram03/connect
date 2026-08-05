@@ -36,6 +36,17 @@ def list_conversations(request):
 
     conversations = Conversation.objects.filter(organization=org).select_related("assignee", "team")
 
+    # Check for SLA breaches on open conversations
+    now = timezone.now()
+    breached = conversations.filter(
+        status__in=["open", "pending"],
+        sla_deadline__isnull=False,
+        sla_deadline__lt=now,
+        sla_breached=False,
+    )
+    if breached.exists():
+        breached.update(sla_breached=True)
+
     status_filter = request.query_params.get("status")
     if status_filter and status_filter in ("open", "pending", "closed"):
         conversations = conversations.filter(status=status_filter)
@@ -92,7 +103,22 @@ def conversation_detail(request, pk):
 
     for key, value in serializer.validated_data.items():
         setattr(conversation, key, value)
-    conversation.save(update_fields=list(serializer.validated_data.keys()))
+
+    # Track resolved time when status changes to closed
+    if "status" in serializer.validated_data and serializer.validated_data["status"] == "closed":
+        if not conversation.resolved_at:
+            conversation.resolved_at = timezone.now()
+
+    # Recompute SLA deadline when priority changes
+    if "priority" in serializer.validated_data:
+        conversation.sla_deadline = conversation.compute_sla_deadline()
+
+    update_fields = list(serializer.validated_data.keys())
+    if "resolved_at" not in update_fields and "status" in update_fields:
+        update_fields.append("resolved_at")
+    if "sla_deadline" not in update_fields and "priority" in update_fields:
+        update_fields.append("sla_deadline")
+    conversation.save(update_fields=update_fields)
 
     return Response(ConversationDetailSerializer(conversation).data)
 
@@ -145,8 +171,12 @@ def create_message(request, pk):
             except Exception:
                 pass
 
+        # Track first agent response time for SLA
+        if not conversation.first_response_at:
+            conversation.first_response_at = timezone.now()
+
     conversation.last_message_at = timezone.now()
-    conversation.save(update_fields=["last_message_at"])
+    conversation.save(update_fields=["last_message_at", "first_response_at"])
 
     return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
@@ -177,6 +207,7 @@ def assign_conversation(request, pk):
             try:
                 team = Team.objects.get(pk=team_id, organization=org)
                 conversation.team = team
+                conversation.assigned_at = timezone.now()
 
                 # Auto-assign: if no assignee_id provided, pick least busy team member
                 if not assignee_id:
@@ -212,7 +243,7 @@ def assign_conversation(request, pk):
                             if member_conversation_counts:
                                 conversation.assignee_id = member_conversation_counts[0]["assignee_id"]
 
-                conversation.save(update_fields=["team", "assignee"])
+                conversation.save(update_fields=["team", "assignee", "assigned_at"])
             except Team.DoesNotExist:
                 return Response({"detail": "Team not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -221,6 +252,7 @@ def assign_conversation(request, pk):
         try:
             assignee = User.objects.get(pk=assignee_id, memberships__organization=org, memberships__status="active")
             conversation.assignee = assignee
+            conversation.assigned_at = timezone.now()
 
             # Auto-detect team from agent's membership if no team was explicitly set
             if not team_id and not conversation.team_id:
@@ -237,7 +269,7 @@ def assign_conversation(request, pk):
         conversation.assignee = None
 
     if assignee_id or assignee_id == "":
-        conversation.save(update_fields=["assignee", "team"])
+        conversation.save(update_fields=["assignee", "team", "assigned_at"])
 
     return Response(ConversationDetailSerializer(conversation).data)
 
@@ -273,3 +305,146 @@ def list_teams(request):
     teams = Team.objects.filter(organization=org).order_by("name")
     data = [{"id": str(t.id), "name": t.name, "description": t.description} for t in teams]
     return Response(data)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def member_analytics(request, user_id):
+    """Get analytics for a specific team member."""
+    org = get_user_org(request.user)
+    if not org:
+        return Response({"detail": "No organization found"}, status=status.HTTP_400_BAD_REQUEST)
+
+    from django.contrib.auth import get_user_model
+    from django.db.models import Avg, Count, Q
+    from datetime import timedelta
+
+    User = get_user_model()
+
+    try:
+        member = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return Response({"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    period = request.query_params.get("period", "7d")
+    now = timezone.now()
+    if period == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "30d":
+        start = now - timedelta(days=30)
+    else:
+        start = now - timedelta(days=7)
+
+    # Conversations handled by this member
+    conversations = Conversation.objects.filter(
+        assignee=member,
+        organization=org,
+        created_at__gte=start,
+    )
+
+    total = conversations.count()
+    resolved = conversations.filter(status="closed").count()
+    open_count = conversations.filter(status="open").count()
+    pending_count = conversations.filter(status="pending").count()
+
+    # Messages sent by this member
+    messages_sent = Message.objects.filter(
+        sender=member,
+        conversation__organization=org,
+        created_at__gte=start,
+        is_from_customer=False,
+    ).count()
+
+    # AI replies in conversations assigned to this member
+    ai_replies = Message.objects.filter(
+        conversation__assignee=member,
+        conversation__organization=org,
+        created_at__gte=start,
+        is_from_customer=False,
+        sender__isnull=True,
+    ).count()
+
+    # Human replies
+    human_replies = messages_sent
+
+    # Avg first response time for conversations assigned to this member
+    conversations_with_first_response = conversations.filter(
+        first_response_at__isnull=False,
+        assigned_at__isnull=False,
+    )
+    avg_first_response = None
+    if conversations_with_first_response.exists():
+        from django.db.models import F
+        avg_seconds = conversations_with_first_response.annotate(
+            response_time_seconds=(F("first_response_at") - F("assigned_at"))
+        ).aggregate(
+            avg=Avg("response_time_seconds")
+        )["avg"]
+        if avg_seconds:
+            avg_first_response = round(avg_seconds.total_seconds() / 60, 1)  # minutes
+
+    # Avg resolution time
+    conversations_resolved = conversations.filter(
+        resolved_at__isnull=False,
+        created_at__isnull=False,
+    )
+    avg_resolution = None
+    if conversations_resolved.exists():
+        from django.db.models import F
+        avg_seconds = conversations_resolved.annotate(
+            resolution_time_seconds=(F("resolved_at") - F("created_at"))
+        ).aggregate(
+            avg=Avg("resolution_time_seconds")
+        )["avg"]
+        if avg_seconds:
+            avg_resolution = round(avg_seconds.total_seconds() / 60, 1)  # minutes
+
+    # SLA compliance
+    sla_total = conversations.filter(sla_deadline__isnull=False).count()
+    sla_breached = conversations.filter(sla_breached=True).count()
+    sla_compliance = None
+    if sla_total > 0:
+        sla_compliance = round(((sla_total - sla_breached) / sla_total) * 100, 1)
+
+    # Escalation rate
+    escalation_count = Message.objects.filter(
+        conversation__assignee=member,
+        conversation__organization=org,
+        created_at__gte=start,
+        is_from_customer=False,
+        sender__isnull=True,
+    ).values("conversation").distinct().count()
+
+    escalation_rate = None
+    if total > 0:
+        escalation_rate = round((escalation_count / total) * 100, 1)
+
+    return Response({
+        "member": {
+            "id": str(member.id),
+            "name": member.first_name or member.email,
+            "email": member.email,
+        },
+        "period": period,
+        "conversations": {
+            "total": total,
+            "resolved": resolved,
+            "open": open_count,
+            "pending": pending_count,
+        },
+        "messages": {
+            "sent": messages_sent,
+            "ai_replies": ai_replies,
+            "human_replies": human_replies,
+        },
+        "response_times": {
+            "avg_first_response_minutes": avg_first_response,
+            "avg_resolution_minutes": avg_resolution,
+        },
+        "sla": {
+            "total": sla_total,
+            "breached": sla_breached,
+            "compliance_rate": sla_compliance,
+        },
+        "escalation_rate": escalation_rate,
+    })

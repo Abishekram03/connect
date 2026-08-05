@@ -35,6 +35,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
     team = TeamMinimalSerializer(read_only=True)
     last_message = serializers.SerializerMethodField()
     message_count = serializers.SerializerMethodField()
+    sla_status = serializers.SerializerMethodField()
+    sla_time_remaining = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -42,6 +44,8 @@ class ConversationListSerializer(serializers.ModelSerializer):
             "id", "ticket_id", "status", "priority", "channel", "subject",
             "customer_name", "customer_email", "customer_avatar",
             "assignee", "team", "last_message", "message_count",
+            "assigned_at", "first_response_at", "resolved_at",
+            "sla_deadline", "sla_breached", "sla_status", "sla_time_remaining",
             "last_message_at", "created_at", "updated_at",
         ]
 
@@ -53,6 +57,20 @@ class ConversationListSerializer(serializers.ModelSerializer):
 
     def get_message_count(self, obj):
         return obj.messages.count()
+
+    def get_sla_status(self, obj):
+        return obj.get_sla_status()
+
+    def get_sla_time_remaining(self, obj):
+        if not obj.sla_deadline:
+            return None
+        from django.utils import timezone
+        from datetime import timedelta
+        now = timezone.now()
+        if obj.sla_breached or now > obj.sla_deadline:
+            return 0
+        remaining = (obj.sla_deadline - now).total_seconds()
+        return int(remaining)
 
 
 class ConversationDetailSerializer(serializers.ModelSerializer):

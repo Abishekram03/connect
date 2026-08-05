@@ -104,3 +104,23 @@ export async function getNextSteps(conversationId: string): Promise<{ steps: str
 export async function fetchAIReplyLogs(): Promise<AIReplyLog[]> {
   return api.get("/api/ai/logs");
 }
+
+export interface SLAConfig {
+  id: string;
+  enabled: boolean;
+  urgent_hours: number;
+  high_hours: number;
+  normal_hours: number;
+  low_hours: number;
+  warn_before_minutes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchSLAConfig(): Promise<SLAConfig> {
+  return api.get("/api/ai/sla-config");
+}
+
+export async function updateSLAConfig(data: Partial<SLAConfig>): Promise<SLAConfig> {
+  return api.patch("/api/ai/sla-config", data);
+}
