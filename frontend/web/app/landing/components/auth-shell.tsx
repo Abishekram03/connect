@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Bot, Globe, Inbox } from "lucide-react";
 import { ConnectMark } from "./connect-mark";
 
 interface Props {
@@ -8,6 +9,24 @@ interface Props {
   children: ReactNode;
   footer: ReactNode;
 }
+
+const featureCards = [
+  {
+    icon: <Bot className="h-4 w-4" />,
+    title: "AI Autopilot",
+    body: "Draft replies, summarize conversations, and resolve the repetitive without losing the human tone.",
+  },
+  {
+    icon: <Globe className="h-4 w-4" />,
+    title: "50 languages, one inbox",
+    body: "Talk to customers in their language — automatically detected, translated, and matched to your brand voice.",
+  },
+  {
+    icon: <Inbox className="h-4 w-4" />,
+    title: "Every channel together",
+    body: "Email, chat, and social messages unified into a single workspace with shared context and history.",
+  },
+];
 
 export function AuthShell({ title, subtitle, children, footer }: Props) {
   return (
@@ -33,44 +52,44 @@ export function AuthShell({ title, subtitle, children, footer }: Props) {
         <div className="pointer-events-none absolute bottom-0 left-0 h-[360px] w-[360px] rounded-full bg-coral/25 blur-3xl" />
         <div className="relative flex h-full flex-col justify-between p-12 text-primary-foreground">
           <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-primary-foreground/60">
-            <span className="live-dot h-1.5 w-1.5 rounded-full bg-accent" />
+            <span className="h-1.5 w-1.5 rounded-full bg-accent live-dot" />
             Live &middot; 12,481 conversations resolved today
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-8">
             <div className="max-w-md space-y-4">
-              <div className="msg-in rounded-2xl rounded-bl-sm bg-white/10 px-4 py-3 text-sm backdrop-blur">
-                Hola &mdash; mi pedido llega ma&ntilde;ana pero necesito cambiar la direcci&oacute;n.
-              </div>
-              <div
-                className="msg-in ml-8 rounded-2xl rounded-br-sm bg-accent px-4 py-3 text-sm text-accent-foreground"
-                style={{ animationDelay: "0.3s" }}
-              >
-                &iexcl;Claro! Ya actualic&eacute; la direcci&oacute;n de tu pedido #A-3241. Llegar&aacute; ma&ntilde;ana entre las
-                10&ndash;12h a Calle Mayor 4. &iquest;Algo m&aacute;s?
-              </div>
-              <div
-                className="msg-in flex w-fit items-center gap-1 rounded-full bg-white/10 px-3 py-2 text-xs backdrop-blur"
-                style={{ animationDelay: "0.6s" }}
-              >
-                <span className="typing-dot h-1.5 w-1.5 rounded-full bg-white/70" />
-                <span
-                  className="typing-dot h-1.5 w-1.5 rounded-full bg-white/70"
-                  style={{ animationDelay: "0.15s" }}
-                />
-                <span
-                  className="typing-dot h-1.5 w-1.5 rounded-full bg-white/70"
-                  style={{ animationDelay: "0.3s" }}
-                />
-              </div>
+              <h2 className="font-display text-4xl leading-tight text-primary-foreground">
+                Support at the speed of conversation.
+              </h2>
+              <p className="text-primary-foreground/60">
+                An AI-native help desk that brings every channel into one inbox — so your team can resolve faster and stay personal.
+              </p>
             </div>
 
-            <blockquote className="max-w-md font-display text-3xl leading-snug text-primary-foreground">
-              &ldquo;Connect resolves 74% of our tickets before a human sees them &mdash; in 22 languages.&rdquo;
-            </blockquote>
-            <div className="text-sm text-primary-foreground/60">
-              Priya Shah &middot; Head of CX, Northwind
+            <div className="grid gap-3">
+              {featureCards.map((card) => (
+                <div
+                  key={card.title}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm transition hover:bg-white/10"
+                >
+                  <div className="flex items-start gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                      {card.icon}
+                    </span>
+                    <div>
+                      <div className="font-medium text-primary-foreground">{card.title}</div>
+                      <div className="text-sm leading-relaxed text-primary-foreground/60">
+                        {card.body}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
+          </div>
+
+          <div className="text-sm text-primary-foreground/60">
+            <span className="font-semibold text-primary-foreground">14-day free trial.</span> No credit card required.
           </div>
         </div>
       </div>

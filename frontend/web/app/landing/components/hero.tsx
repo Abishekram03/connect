@@ -1,11 +1,17 @@
-import { ArrowRight, ArrowUpRight, Languages, Sparkles, Zap } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Sparkles, Zap } from "lucide-react";
 import { MagneticButton } from "./magnetic-button";
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden px-6 pb-24 pt-16 md:pt-24 grain-bg">
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[560px] w-[900px] -translate-x-1/2 rounded-full bg-accent/25 blur-3xl" />
-      <div className="pointer-events-none absolute top-40 right-0 h-[300px] w-[300px] rounded-full bg-coral/20 blur-3xl" />
+      <div
+        className="pointer-events-none absolute -top-40 left-1/2 h-[560px] w-[900px] -translate-x-1/2 rounded-full blur-3xl"
+        style={{ background: "rgba(179, 255, 10, 0.25)" }}
+      />
+      <div
+        className="pointer-events-none absolute top-40 right-0 h-[300px] w-[300px] rounded-full blur-3xl"
+        style={{ background: "rgba(255, 120, 100, 0.2)" }}
+      />
 
       <div className="relative mx-auto max-w-6xl">
         <div className="mx-auto mb-8 flex w-fit items-center gap-2 rounded-full border border-border bg-background/60 px-3 py-1.5 backdrop-blur">
@@ -75,19 +81,6 @@ function HeroProductFrame() {
 
   return (
     <div className="relative mx-auto mt-16 max-w-5xl float-in">
-      <div className="pointer-events-none absolute -left-4 top-16 z-20 hidden rotate-[-6deg] rounded-2xl border border-border bg-background px-4 py-3 shadow-xl md:block">
-        <div className="flex items-center gap-2 text-xs">
-          <Zap className="h-3.5 w-3.5 fill-accent text-accent" />
-          <span className="font-medium">Resolved in 12s</span>
-        </div>
-      </div>
-      <div className="pointer-events-none absolute -right-2 top-40 z-20 hidden rotate-[4deg] rounded-2xl border border-border bg-ink px-4 py-3 text-primary-foreground shadow-xl md:block">
-        <div className="flex items-center gap-2 text-xs">
-          <Languages className="h-3.5 w-3.5" />
-          <span className="font-medium">Auto-translated &middot; FR &rarr; EN</span>
-        </div>
-      </div>
-
       <div className="overflow-hidden rounded-3xl border border-border bg-surface shadow-[0_40px_120px_-40px_rgba(0,0,0,0.25)]">
         <div className="flex items-center justify-between border-b border-border bg-background/60 px-5 py-3">
           <div className="flex items-center gap-2">

@@ -1,31 +1,34 @@
+"use client";
+
 import { Check } from "lucide-react";
 import { MagneticButton } from "./magnetic-button";
 
 export function Pricing() {
   const tiers = [
     {
-      name: "Starter",
-      price: "$0",
-      note: "Forever · up to 100 convos/mo",
-      feats: ["AI autopilot", "1 inbox channel", "3 seats", "Community support"],
-      cta: "Start free",
-      variant: "outline" as const,
-    },
-    {
       name: "Growth",
       price: "$49",
       per: "/seat/mo",
       note: "For scaling teams",
-      feats: ["Everything in Starter", "Unlimited channels", "92 languages", "Workflows + API", "SLA reporting"],
+      feats: ["AI autopilot", "Unlimited channels", "50 languages", "Workflows + API", "SLA reporting", "Email support"],
+      cta: "Start 14-day trial",
+      variant: "outline" as const,
+    },
+    {
+      name: "Pro",
+      price: "$99",
+      per: "/seat/mo",
+      note: "For support leaders",
+      feats: ["Everything in Growth", "Custom AI training", "Priority routing", "Advanced analytics", "SSO", "Priority support"],
       cta: "Start 14-day trial",
       variant: "accent" as const,
       featured: true,
     },
     {
-      name: "Enterprise",
+      name: "Business",
       price: "Custom",
       note: "Compliance + volume",
-      feats: ["SOC 2 · HIPAA · GDPR", "EU data residency", "SSO + SCIM", "Dedicated CSM", "99.99% uptime"],
+      feats: ["SOC 2 · HIPAA · GDPR", "EU data residency", "SCIM provisioning", "Dedicated CSM", "99.99% uptime SLA"],
       cta: "Talk to sales",
       variant: "primary" as const,
     },
